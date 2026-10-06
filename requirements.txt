@@ -5,3 +5,4 @@ plotly
 feedparser
 requests
 deep-translator
+tzdata
