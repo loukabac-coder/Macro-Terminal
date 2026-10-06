@@ -3,4 +3,4 @@ yfinance
 pandas
 plotly
 feedparser
-requests-cache
+requests
