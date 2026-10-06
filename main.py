@@ -20,32 +20,41 @@ from plotly.subplots import make_subplots
 st.set_page_config(page_title="PRO Macro Terminal", page_icon="◆", layout="wide", initial_sidebar_state="expanded")
 
 # =====================================================================
-#  BACKEND (INCHANGÉ) : UNIVERSE + load_all_data
+#  BACKEND : UNIVERSE ÉLARGI (BIAIS FRANÇAIS)
 # =====================================================================
 UNIVERSE = {
-    "🏛️ Taux & Banques Centrales": {
+    "🏛️️ Taux & Banques Centrales": {
         "US 10Y Treasury": "^TNX",
         "US 2Y Treasury": "^IRX",
-        "Eurozone 10Y (Proxy IGOV)": "IGOV",
-        "Japon 10Y (Proxy JGBL)": "JGBL.L",
-        "Intl Treasuries (BWX)": "BWX"
+        "Eurozone 10Y (IGOV)": "IGOV",
+        "OAT 10Y (France)": "^FR10Y=X",
+        "Japon 10Y (JGBL.L)": "JGBL.L",
+        "Gilt 10Y (UK)": "^GB10Y=X"
     },
     "🌍 Indices": {
+        "CAC 40 (France)": "^FCHI",
         "S&P 500 (US)": "^GSPC",
         "Nasdaq 100 (Tech)": "^NDX",
-        "Dow Jones": "^DJI",
-        "Russell 2000 (Small Caps)": "^RUT",
         "Euro Stoxx 50": "^STOXX50E",
-        "CAC 40 (France)": "^FCHI",
         "DAX 40 (Allemagne)": "^GDAXI",
-        "FTSE 100 (UK)": "^FTSE",
         "SMI (Suisse)": "^SSMI",
+        "FTSE 100 (UK)": "^FTSE",
         "Nikkei 225 (Japon)": "^N225",
         "Hang Seng (Hong Kong)": "^HSI",
-        "CSI 300 (Proxy ASHR)": "ASHR",
         "Nifty 50 (Inde)": "^NSEI",
-        "MSCI World (URTH)": "URTH",
-        "MSCI Emerging (EEM)": "EEM"
+        "MSCI World (URTH)": "URTH"
+    },
+    "🇫🇷 Fleurons Français": {
+        "LVMH (Luxe)": "MC.PA",
+        "L'Oréal (Cosmétique)": "OR.PA",
+        "Hermès (Luxe)": "RMS.PA",
+        "TotalEnergies (Énergie)": "TTE.PA",
+        "Sanofi (Santé)": "SAN.PA",
+        "Schneider Elec. (Industrie)": "SU.PA",
+        "Airbus (Aérospatial)": "AIR.PA",
+        "BNP Paribas (Banque)": "BNP.PA",
+        "AXA (Assurance)": "CS.PA",
+        "EssilorLuxottica": "EL.PA"
     },
     "💱 Devises (Forex)": {
         "DXY (Dollar Index)": "DX-Y.NYB",
@@ -54,10 +63,9 @@ UNIVERSE = {
         "USD/JPY (Ninja)": "USDJPY=X",
         "USD/CHF (Refuge)": "USDCHF=X",
         "AUD/USD (Aussie)": "AUDUSD=X",
-        "USD/CAD (Loonie)": "USDCAD=X",
         "USD/CNY (Yuan Onshore)": "USDCNY=X",
         "EUR/GBP": "EURGBP=X",
-        "EUR/CHF": "EURCHF=X"
+        "EUR/JPY": "EURJPY=X"
     },
     "🛢️ Matières Premières": {
         "Brent Crude (Europe)": "BZ=F",
@@ -66,9 +74,9 @@ UNIVERSE = {
         "Argent (Silver)": "SI=F",
         "Cuivre (Dr. Copper)": "HG=F",
         "Gaz Naturel (US)": "NG=F",
+        "Uranium (Proxy URA)": "URA",
         "Blé (Wheat)": "ZW=F",
-        "Maïs (Corn)": "ZC=F",
-        "Soja (Soybeans)": "ZS=F"
+        "Cacao (Cocoa)": "CC=F"
     },
     "🚀 Leaders & Mega-Caps": {
         "Apple": "AAPL",
@@ -79,7 +87,6 @@ UNIVERSE = {
         "Meta": "META",
         "TSMC": "TSM",
         "Novo Nordisk": "NVO",
-        "LVMH (Luxe)": "MC.PA",
         "ASML (Semi-conducteurs)": "ASML.AS"
     },
     "🪙 Crypto-Actifs": {
@@ -87,7 +94,8 @@ UNIVERSE = {
         "Ethereum (ETH)": "ETH-USD",
         "Solana (SOL)": "SOL-USD",
         "Binance Coin (BNB)": "BNB-USD",
-        "Ripple (XRP)": "XRP-USD"
+        "Ripple (XRP)": "XRP-USD",
+        "Cardano (ADA)": "ADA-USD"
     },
     "🚨 Volatilité & Crédit": {
         "VIX (Indice de la Peur)": "^VIX",
@@ -96,7 +104,6 @@ UNIVERSE = {
         "Investment Grade (Dette)": "LQD"
     }
 }
-
 
 @st.cache_data(ttl=300)
 def load_all_data():
@@ -153,6 +160,13 @@ section[data-testid="stSidebar"] div[role="radiogroup"]>label:has(input:checked)
 .pill{padding:7px 14px;border-radius:99px;font-size:.78rem;font-weight:600;background:rgba(255,255,255,.05);border:1px solid var(--bd);color:#CBD3E6;font-family:'JetBrains Mono',monospace}
 .pill.up{color:var(--up);border-color:rgba(52,211,153,.35);background:rgba(52,211,153,.08)}
 .pill.dn{color:var(--dn);border-color:rgba(251,113,133,.35);background:rgba(251,113,133,.08)}
+
+/* Central Banks Panel */
+.cb-panel {display:flex; gap:15px; margin-bottom:25px; flex-wrap:wrap;}
+.cb-card {flex:1; min-width:180px; background:linear-gradient(150deg,rgba(255,255,255,.07),rgba(255,255,255,.015)); border:1px solid var(--bd); border-radius:18px; padding:16px; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,.35);}
+.cb-name {color:var(--mut); font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;}
+.cb-rate {color:var(--a2); font-size:1.8rem; font-weight:700; font-family:'JetBrains Mono',monospace; margin-bottom:4px;}
+.cb-desc {color:#6B7389; font-size:0.75rem;}
 
 /* Metric cards (st.container key=card_*) */
 [class*="st-key-card_"]{background:linear-gradient(160deg,rgba(255,255,255,.065),rgba(255,255,255,.015));border:1px solid var(--bd);border-radius:18px;padding:16px 16px 4px;backdrop-filter:blur(14px);box-shadow:0 10px 30px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.07);transition:transform .3s,border-color .3s,box-shadow .3s;margin-bottom:8px;gap:0!important}
@@ -222,16 +236,17 @@ div[data-baseweb="tab-border"]{background:var(--bd)!important}
 .mt .ex{position:absolute;right:0;top:0;opacity:.4;transition:.25s}
 [class*="st-key-card_"]:hover .ex{opacity:1;color:var(--a2)}
 
-/* Top 5 compact */
+/* Top 5 compact & traduit */
 .hl{display:block;position:relative;overflow:hidden;text-decoration:none!important;padding:24px 26px;border-radius:20px;min-height:276px;background:linear-gradient(150deg,rgba(255,255,255,.08),rgba(255,255,255,.015));border:1px solid var(--bd);box-shadow:0 12px 34px rgba(0,0,0,.4);transition:.3s}
 .hl::before{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:linear-gradient(90deg,var(--c),transparent)}
 .hl:hover{transform:translateY(-3px);border-color:var(--c);box-shadow:0 0 30px -6px var(--c)}
-.hl-t{color:#fff;font-weight:800;font-size:1.4rem;line-height:1.3;margin:6px 0 12px}
-.hl-s{color:#AEB6CA;font-size:.9rem;line-height:1.55}
-.sl{display:flex;gap:14px;align-items:center;text-decoration:none!important;padding:10px 14px;border-radius:14px;margin-bottom:8px;min-height:62px;background:rgba(255,255,255,.04);border:1px solid var(--bd);border-left:3px solid var(--c);transition:.25s}
+.hl-t{color:#fff;font-weight:800;font-size:1.2rem;line-height:1.3;margin:6px 0 6px}
+.hl-s{color:var(--a2);font-size:0.95rem;line-height:1.4;margin-bottom:12px;font-style:italic;}
+.sl{display:flex;gap:14px;align-items:center;text-decoration:none!important;padding:12px 16px;border-radius:14px;margin-bottom:10px;min-height:75px;background:rgba(255,255,255,.04);border:1px solid var(--bd);border-left:3px solid var(--c);transition:.25s}
 .sl:hover{background:rgba(255,255,255,.08);transform:translateX(4px)}
 .sl .rank{font-size:1.1rem}
-.sl-t{color:#F1F5F9;font-weight:600;font-size:.88rem;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.sl-t{color:#F1F5F9;font-weight:600;font-size:0.95rem;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.sl-fr{color:var(--mut);font-size:0.85rem;margin-top:2px;font-style:italic;}
 .sl-m{display:flex;gap:8px;align-items:center;margin-top:4px;font-size:.7rem;color:#6B7389}
 
 /* Vue détaillée */
@@ -259,7 +274,7 @@ st.markdown(CSS, unsafe_allow_html=True)
 ICONS = [
     '<line x1="3" x2="21" y1="22" y2="22"/><line x1="6" x2="6" y1="18" y2="11"/><line x1="10" x2="10" y1="18" y2="11"/><line x1="14" x2="14" y1="18" y2="11"/><line x1="18" x2="18" y1="18" y2="11"/><polygon points="12 2 20 7 4 7"/>',
     '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
-    '<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>',
+    '<circle cx="12" cy="12" r="10"/><path d="M12 2v20"/><path d="M2 12h20"/>',
     '<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/>',
     '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
     '<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/>',
@@ -268,7 +283,6 @@ ICONS = [
     '<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6Z"/>',
     '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
 ]
-
 
 def icon_css():
     out = "<style>"
@@ -281,7 +295,6 @@ def icon_css():
                 f'-webkit-mask:url("{uri}") center/contain no-repeat;mask:url("{uri}") center/contain no-repeat}}')
     return out + "</style>"
 
-
 st.markdown(icon_css(), unsafe_allow_html=True)
 
 
@@ -291,12 +304,10 @@ st.markdown(icon_css(), unsafe_allow_html=True)
 def clean_label(k):
     return re.sub(r"^[^\w]+", "", k).strip()
 
-
 def hex_rgba(h, a):
     h = h.lstrip('#')
     r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
     return f"rgba({r},{g},{b},{a})"
-
 
 def show(fig, key=None, static=False):
     cfg = {'displayModeBar': False, 'staticPlot': static}
@@ -305,16 +316,13 @@ def show(fig, key=None, static=False):
     except TypeError:
         st.plotly_chart(fig, use_container_width=True, config=cfg, key=key)
 
-
 def hero(eyebrow, title, sub, pills=""):
     st.markdown(f'<div class="hero"><div><div class="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{sub}</p></div>'
                 f'<div class="pills">{pills}</div></div>', unsafe_allow_html=True)
 
-
 def sec(title, sub, right=""):
     st.markdown(f'<div class="sec"><div><h2>{title}</h2><span>{sub}</span></div><div>{right}</div></div>',
                 unsafe_allow_html=True)
-
 
 def mini_chart(series, color):
     fig = go.Figure()
@@ -335,7 +343,6 @@ def mini_chart(series, color):
         yaxis=dict(showgrid=False, visible=False, range=[lo - pad, hi + pad]),
         hovermode='x unified', hoverlabel=dict(bgcolor="#11142A", font=dict(family="Inter", color="#fff", size=12), bordercolor=color))
     return fig
-
 
 def gauge(v, title, color=A1, rng=(0, 100), suffix="%", height=215):
     fig = go.Figure(go.Indicator(
@@ -365,7 +372,6 @@ MARKETS = [  # (ville, bourse, fuseau, sessions locales)
 ]
 STRIP = ["Sydney", "Tokyo", "Hong Kong", "Londres", "Paris", "New York"]
 PARIS = ZoneInfo("Europe/Paris")
-
 
 def market_strip():
     cfg = [{"n": n, "x": x, "tz": tz, "s": ss} for n, x, tz, ss in MARKETS if n in STRIP]
@@ -400,7 +406,6 @@ def load_detail(ticker, period):
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     return df.dropna(subset=["Close"])
-
 
 @st.dialog("Analyse détaillée", width="large")
 def detail_dialog(name, ticker, cat):
@@ -474,7 +479,7 @@ st.sidebar.markdown(
     '<div class="navlab">Navigation</div>', unsafe_allow_html=True)
 options = list(UNIVERSE.keys()) + ["🕐 Calendrier des Marchés", "📰 Actualités Macro (FR)", "📚 Base de Connaissances"]
 category = st.sidebar.radio("NAVIGATION", options, format_func=clean_label, label_visibility="collapsed")
-st.sidebar.markdown('<div style="margin-top:30px;font-size:.7rem;color:#4B5367;line-height:1.5">Données : Yahoo Finance · cache 5 min<br>Informations à but pédagogique, pas un conseil en investissement.</div>',
+st.sidebar.markdown('<div style="margin-top:30px;font-size:.7rem;color:#4B5367;line-height:1.5">Données : Yahoo Finance · cache 5 min<br>Informations à but pédagogique.</div>',
                     unsafe_allow_html=True)
 
 # =====================================================================
@@ -483,6 +488,18 @@ st.sidebar.markdown('<div style="margin-top:30px;font-size:.7rem;color:#4B5367;l
 market_strip()
 
 if category in UNIVERSE:
+    
+    # --- PANNEAU DES BANQUES CENTRALES ---
+    if category == "🏛️ Taux & Banques Centrales":
+        st.markdown("""
+        <div class="cb-panel">
+            <div class="cb-card"><div class="cb-name">FED (États-Unis)</div><div class="cb-rate">4.75% - 5.00%</div><div class="cb-desc">Fed Funds Rate</div></div>
+            <div class="cb-card"><div class="cb-name">BCE (Zone Euro)</div><div class="cb-rate">3.50%</div><div class="cb-desc">Taux de dépôt</div></div>
+            <div class="cb-card"><div class="cb-name">BoE (Royaume-Uni)</div><div class="cb-rate">5.00%</div><div class="cb-desc">Bank Rate</div></div>
+            <div class="cb-card"><div class="cb-name">BoJ (Japon)</div><div class="cb-rate">0.25%</div><div class="cb-desc">Policy Rate</div></div>
+        </div>
+        """, unsafe_allow_html=True)
+
     with st.spinner("Synchronisation avec les marchés..."):
         df_close = load_all_data()
 
@@ -535,7 +552,7 @@ if category in UNIVERSE:
                 st.warning(f"{name} : Hors ligne")
 
 # =====================================================================
-#  PAGE : ACTUALITÉS
+#  PAGE : CALENDRIER DES MARCHÉS
 # =====================================================================
 elif category == "🕐 Calendrier des Marchés":
     now = datetime.now(PARIS)
@@ -585,7 +602,7 @@ elif category == "🕐 Calendrier des Marchés":
     fig.add_vline(x=now_h, line=dict(color=DN, width=2, dash="dot"), annotation_text="Maintenant", annotation_font_color=DN)
     fig.update_layout(height=430, barmode="overlay", margin=dict(l=0, r=10, t=24, b=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                       font=dict(family="Inter", color="#CBD3E6"), xaxis=dict(range=[0, 24], tickvals=list(range(0, 25, 2)), ticktext=[f"{h:02d}h" for h in range(0, 25, 2)],
-                                                                          gridcolor="rgba(255,255,255,.06)"),
+                                                                             gridcolor="rgba(255,255,255,.06)"),
                       yaxis=dict(autorange="reversed", categoryorder="array", categoryarray=[m[0] for m in MARKETS] + ["Crypto"]))
     show(fig, key="cal_gantt")
 
@@ -598,12 +615,10 @@ elif category == "🕐 Calendrier des Marchés":
                   f'<td>Lun–Ven</td><td><span class="pill {cls}">{stt}</span></td></tr>')
     st.markdown('<table class="ct"><tr><th>Place</th><th>Bourse</th><th>Heures locales</th><th>Heure de Paris</th><th>Jours</th><th>Statut</th></tr>' + rows_ + '</table>',
                 unsafe_allow_html=True)
-    with st.expander("À savoir"):
-        st.markdown("- **Hong Kong** : la pause déjeuner (12h–13h) pourrait être supprimée : HKEX étudie un allongement des horaires.\n"
-                    "- **Tokyo** : clôture à 15h30 (horaires étendus depuis fin 2024).\n"
-                    "- **Pré-ouvertures / enchères de clôture** non représentées ici.\n"
-                    "- Vérifiez toujours le calendrier officiel de la bourse pour les jours fériés et demi-journées.")
 
+# =====================================================================
+#  PAGE : ACTUALITÉS (TRADUCTION RAPIDE DU TOP 5)
+# =====================================================================
 elif category == "📰 Actualités Macro (FR)":
     FEED = "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664"
     AGGREGATOR = "https://www.tradingview.com/news/"
@@ -620,29 +635,15 @@ elif category == "📰 Actualités Macro (FR)":
         r = requests.get(FEED, headers={'User-Agent': 'Mozilla/5.0'}, timeout=8)
         feed = feedparser.parse(r.content)
         out = []
-        for e in feed.entries[:40]:
+        for e in feed.entries[:30]:
             ts = time.mktime(e.published_parsed) if getattr(e, "published_parsed", None) else 0
             out.append({"title": e.title, "link": e.link, "ts": ts,
                         "summary": re.sub(r"<[^>]+>", "", getattr(e, "summary", ""))})
         return out
 
-    @st.cache_data(ttl=86400, show_spinner=False)
-    def fr(text):
-        text = (text or "").strip()
-        if not text:
-            return ""
-        for _ in range(3):
-            try:
-                out = GoogleTranslator(source='auto', target='fr').translate(text)
-                if out:
-                    return out
-            except Exception:
-                time.sleep(.6)
-        raise RuntimeError("translation failed")  # non mis en cache : nouvel essai au prochain chargement
-
     def tr(text):
         try:
-            return fr(text)
+            return GoogleTranslator(source='auto', target='fr').translate(text)
         except Exception:
             return text
 
@@ -665,20 +666,22 @@ elif category == "📰 Actualités Macro (FR)":
          f'<span class="pill">Source · CNBC</span>')
 
     try:
-        with st.spinner("Chargement et traduction des actualités..."):
+        with st.spinner("Chargement rapide des actualités..."):
             news = []
             for n in fetch_news():
                 n = dict(n)
                 n["score"], n["tag"] = score(n)
                 news.append(n)
+            
+            # On trie et on prend le Top 5 le plus pertinent
             top5 = sorted(news, key=lambda n: (n["score"], n["ts"]), reverse=True)[:5]
             top_links = {n["link"] for n in top5}
             flux = sorted([n for n in news if n["link"] not in top_links], key=lambda n: n["ts"], reverse=True)[:15]
-            for n in top5 + flux:
+            
+            # On traduit UNIQUEMENT le Top 5 pour éviter que l'API ne plante et que le site rame
+            for n in top5:
                 n["fr"] = tr(n["title"])
-                n["fr_sum"] = tr(n["summary"][:300].rsplit(" ", 1)[0]) if n["link"] in top_links else ""
-            if sum(n["fr"] == n["title"] for n in top5 + flux) > 10:
-                st.warning("Traduction momentanément indisponible : certains titres restent en anglais. Rechargez dans quelques instants.")
+                n["fr_sum"] = tr(n["summary"][:300].rsplit(" ", 1)[0])
 
         if not news:
             st.warning("Aucune actualité trouvée.")
@@ -689,7 +692,7 @@ elif category == "📰 Actualités Macro (FR)":
             def slim(n, rank):
                 c = TAGS[n["tag"]][0]
                 return (f'<a class="sl" style="--c:{c}" href="{html.escape(n["link"])}" target="_blank"><span class="rank">{rank}</span>'
-                        f'<div><div class="sl-t">{html.escape(n["fr"])}</div><div class="sl-m"><span class="tag">{n["tag"]}</span>'
+                        f'<div><div class="sl-t">{html.escape(n["title"])}</div><div class="sl-fr">🇫🇷 {html.escape(n["fr"])}</div><div class="sl-m"><span class="tag">{n["tag"]}</span>'
                         f'<span>{fmt(n["ts"])}</span></div></div></a>')
 
             h = top5[0]
@@ -700,7 +703,7 @@ elif category == "📰 Actualités Macro (FR)":
                 st.markdown(
                     f'<a class="hl" style="--c:{hc}" href="{html.escape(h["link"])}" target="_blank">'
                     f'<div class="nc-top" style="margin:0"><span class="rank">01</span><span class="tag">{h["tag"]}</span></div>'
-                    f'<div class="hl-t">{html.escape(h["fr"])}</div><div class="hl-s">{html.escape(h["fr_sum"])}</div>'
+                    f'<div class="hl-t">{html.escape(h["title"])}</div><div class="hl-s">🇫🇷 {html.escape(h["fr"])}</div>'
                     f'<div class="nc-m"><span>{fmt(h["ts"])}</span><span>·</span><span>Impact <span class="dots" style="--c:{hc}">{"●" * dots}{"○" * (5 - dots)}</span></span>'
                     f'<span>·</span><span>Lire l\'article ↗</span></div></a>', unsafe_allow_html=True)
             with R:
@@ -708,9 +711,10 @@ elif category == "📰 Actualités Macro (FR)":
 
             # ---------- SECTION B ----------
             st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
-            sec("Le Flux du Jour", "Dernières publications, de la plus récente à la plus ancienne",
+            sec("Le Flux du Jour", "Dernières publications (Titres originaux pour la rapidité)",
                 f'<a class="btn" href="{AGGREGATOR}" target="_blank">Toutes les infos en temps réel '
                 '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg></a>')
+            
             opts = ["Tous"] + list(TAGS)
             sel = (st.pills("Filtre", opts, default="Tous", label_visibility="collapsed") if hasattr(st, "pills")
                    else st.radio("Filtre", opts, horizontal=True, label_visibility="collapsed"))
@@ -721,7 +725,7 @@ elif category == "📰 Actualités Macro (FR)":
                 c = TAGS[n["tag"]][0]
                 rows_html += (f'<a class="fx" style="--c:{c}" href="{html.escape(n["link"])}" target="_blank">'
                               f'<span class="fx-t">{fmt(n["ts"])}</span><span class="tag" style="--c:{c}">{n["tag"]}</span>'
-                              f'<span class="fx-x">{html.escape(n["fr"])}</span><span class="fx-a">↗</span></a>')
+                              f'<span class="fx-x">{html.escape(n["title"])}</span><span class="fx-a">↗</span></a>')
             st.markdown(rows_html, unsafe_allow_html=True)
     except Exception as e:
         st.error(f"Erreur de chargement ou de traduction : {e}")
@@ -765,10 +769,24 @@ elif category == "📚 Base de Connaissances":
             out += f'<div class="rk"><span class="n {m}">{i + 1}</span><span>{label}</span><em>{extra}</em></div>'
         return out
 
-    t1, t2, t3, t4, t5, t6 = st.tabs(["Capitalisations", "S&P 500", "Économies", "Matières premières", "Blocs & Alliances", "Leaders étrangers"])
+    t1, t2, t3, t4, t5, t6, t7 = st.tabs(["Banques Centrales", "Capitalisations", "S&P 500", "Économies", "Matières premières", "Blocs & Alliances", "Fleurons Étrangers"])
+
+    # ---- Banques Centrales ----
+    with t1:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown('<div class="kc"><h4>Réserve Fédérale (FED)</h4><p>Banque centrale des États-Unis.</p>' + ranks([
+                ("<b>Double mandat</b>", "Plein emploi & Stabilité des prix (~2%)"),
+                ("<b>Indicateurs surveillés</b>", "NFP (Emploi), PCE (Inflation)"),
+                ("<b>Impact Taux</b>", "Hausse = DXY monte, Tech baisse")]) + '</div>', unsafe_allow_html=True)
+        with c2:
+            st.markdown('<div class="kc"><h4>Banque Centrale Européenne (BCE)</h4><p>Banque centrale de la zone euro.</p>' + ranks([
+                ("<b>Mandat unique</b>", "Stabilité des prix uniquement"),
+                ("<b>Indicateurs surveillés</b>", "HICP, PMI manufacturiers"),
+                ("<b>Dynamique</b>", "Souvent en décalage avec la FED")]) + '</div>', unsafe_allow_html=True)
 
     # ---- Capitalisations ----
-    with t1:
+    with t2:
         st.caption("Survolez une entreprise pour afficher son activité.")
         c1, c2, c3 = st.columns(3)
         for col, (big, title, names, clr) in zip((c1, c2, c3), [
@@ -797,7 +815,7 @@ elif category == "📚 Base de Connaissances":
             st.markdown('</div>', unsafe_allow_html=True)
 
     # ---- S&P 500 ----
-    with t2:
+    with t3:
         c1, c2 = st.columns([3, 2])
         with c1:
             st.markdown('<div class="kc"><h4>Plus grandes pondérations du S&P 500</h4>' + ranks([
@@ -810,7 +828,7 @@ elif category == "📚 Base de Connaissances":
             st.markdown('</div>', unsafe_allow_html=True)
 
     # ---- Économies ----
-    with t3:
+    with t4:
         c1, c2 = st.columns([3, 2])
         with c1:
             st.markdown('<div class="kc"><h4>Plus grandes économies · PIB nominal</h4>', unsafe_allow_html=True)
@@ -834,7 +852,7 @@ elif category == "📚 Base de Connaissances":
                 ("<b>Espagne</b>", "Tourisme & services")]) + '</div>', unsafe_allow_html=True)
 
     # ---- Matières premières ----
-    with t4:
+    with t5:
         st.caption("Top 3 des plus grands producteurs mondiaux.")
         commo = [
             ("Pétrole (barils/jour)", ["États-Unis", "Arabie Saoudite", "Russie"]),
@@ -848,7 +866,7 @@ elif category == "📚 Base de Connaissances":
                 st.markdown(ranks(top), unsafe_allow_html=True)
 
     # ---- Blocs ----
-    with t5:
+    with t6:
         c1, c2, c3 = st.columns(3)
         with c1:
             st.markdown('<div class="kc" style="--c:#818CF8"><h4>G7</h4><div class="big">7 + UE</div>' + chips(["États-Unis", "Japon", "Allemagne", "Royaume-Uni", "France", "Italie", "Canada"]).replace('class="co tip" data-tip="', 'class="co" data-x="') + '<p style="margin-top:10px">Union européenne invitée aux sommets.</p></div>', unsafe_allow_html=True)
@@ -858,7 +876,7 @@ elif category == "📚 Base de Connaissances":
             st.markdown('<div class="kc" style="--c:#FB923C"><h4>OPEP+</h4><div class="big">Cartel pétrolier</div><p>Mené par l\'<b>Arabie Saoudite</b>, allié à la <b>Russie</b> pour contrôler l\'offre mondiale de brut.</p></div>', unsafe_allow_html=True)
 
     # ---- Leaders étrangers ----
-    with t6:
+    with t7:
         c1, c2 = st.columns(2)
         with c1:
             st.markdown('<div class="kc"><h4>Inde · Nifty 50</h4>' + ranks([
