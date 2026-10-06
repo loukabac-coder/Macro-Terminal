@@ -11,6 +11,11 @@ import plotly.graph_objects as go
 import feedparser
 import requests
 from deep_translator import GoogleTranslator
+import json
+from datetime import timedelta
+from zoneinfo import ZoneInfo
+import streamlit.components.v1 as components
+from plotly.subplots import make_subplots
 
 st.set_page_config(page_title="PRO Macro Terminal", page_icon="◆", layout="wide", initial_sidebar_state="expanded")
 
@@ -208,6 +213,44 @@ div[data-baseweb="tab-highlight"]{background:linear-gradient(90deg,var(--a1),var
 div[data-baseweb="tab-border"]{background:var(--bd)!important}
 [data-testid="stExpander"]{border:1px solid var(--bd)!important;border-radius:14px!important;background:rgba(255,255,255,.035);margin-bottom:10px;overflow:hidden}
 [data-testid="stExpander"] summary:hover{background:rgba(99,102,241,.08)}
+
+/* Cartes cliquables : le bouton invisible recouvre toute la carte */
+[class*="st-key-card_"]{position:relative;cursor:pointer}
+[class*="st-key-btn_"]{position:absolute!important;inset:0;z-index:5;width:100%!important;height:100%!important;margin:0!important}
+[class*="st-key-btn_"] div,[class*="st-key-btn_"] button{width:100%!important;height:100%!important;opacity:0;cursor:pointer}
+.mt{position:relative;padding-right:20px}
+.mt .ex{position:absolute;right:0;top:0;opacity:.4;transition:.25s}
+[class*="st-key-card_"]:hover .ex{opacity:1;color:var(--a2)}
+
+/* Top 5 compact */
+.hl{display:block;position:relative;overflow:hidden;text-decoration:none!important;padding:24px 26px;border-radius:20px;min-height:276px;background:linear-gradient(150deg,rgba(255,255,255,.08),rgba(255,255,255,.015));border:1px solid var(--bd);box-shadow:0 12px 34px rgba(0,0,0,.4);transition:.3s}
+.hl::before{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:linear-gradient(90deg,var(--c),transparent)}
+.hl:hover{transform:translateY(-3px);border-color:var(--c);box-shadow:0 0 30px -6px var(--c)}
+.hl-t{color:#fff;font-weight:800;font-size:1.4rem;line-height:1.3;margin:6px 0 12px}
+.hl-s{color:#AEB6CA;font-size:.9rem;line-height:1.55}
+.sl{display:flex;gap:14px;align-items:center;text-decoration:none!important;padding:10px 14px;border-radius:14px;margin-bottom:8px;min-height:62px;background:rgba(255,255,255,.04);border:1px solid var(--bd);border-left:3px solid var(--c);transition:.25s}
+.sl:hover{background:rgba(255,255,255,.08);transform:translateX(4px)}
+.sl .rank{font-size:1.1rem}
+.sl-t{color:#F1F5F9;font-weight:600;font-size:.88rem;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.sl-m{display:flex;gap:8px;align-items:center;margin-top:4px;font-size:.7rem;color:#6B7389}
+
+/* Vue détaillée */
+.sg{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}
+.sgt{padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid var(--bd)}
+.sgt span{display:block;font-size:.65rem;letter-spacing:1px;text-transform:uppercase;color:var(--mut)}
+.sgt b{font-family:'JetBrains Mono',monospace;font-size:1.05rem}
+.sgt b.up{color:var(--up)}.sgt b.dn{color:var(--dn)}
+.rb{position:relative;height:8px;border-radius:8px;background:linear-gradient(90deg,var(--dn),#FBBF24,var(--up));margin:10px 0 4px}
+.rb i{position:absolute;top:-4px;width:6px;height:16px;border-radius:4px;background:#fff;box-shadow:0 0 10px #fff}
+.rl{display:flex;justify-content:space-between;font-size:.72rem;color:var(--mut);font-family:'JetBrains Mono',monospace}
+
+/* Calendrier */
+.ct{width:100%;border-collapse:separate;border-spacing:0 8px}
+.ct th{padding:6px 14px;text-align:left;font-size:.68rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--mut);font-weight:600}
+.ct td{padding:13px 14px;background:rgba(255,255,255,.04);border-top:1px solid var(--bd);border-bottom:1px solid var(--bd);font-size:.9rem}
+.ct td:first-child{border-left:1px solid var(--bd);border-radius:12px 0 0 12px;font-weight:700}
+.ct td:last-child{border-right:1px solid var(--bd);border-radius:0 12px 12px 0}
+.ct .mono{font-family:'JetBrains Mono',monospace;font-size:.82rem;color:#CBD3E6}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -221,6 +264,7 @@ ICONS = [
     '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
     '<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/>',
     '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+    '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
     '<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6Z"/>',
     '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
 ]
@@ -254,8 +298,8 @@ def hex_rgba(h, a):
     return f"rgba({r},{g},{b},{a})"
 
 
-def show(fig, key=None):
-    cfg = {'displayModeBar': False}
+def show(fig, key=None, static=False):
+    cfg = {'displayModeBar': False, 'staticPlot': static}
     try:
         st.plotly_chart(fig, width="stretch", config=cfg, key=key)
     except TypeError:
@@ -306,6 +350,119 @@ def gauge(v, title, color=A1, rng=(0, 100), suffix="%", height=215):
 
 
 # =====================================================================
+#  HORAIRES DES PLACES BOURSIÈRES (heures locales, hors jours fériés)
+# =====================================================================
+MARKETS = [  # (ville, bourse, fuseau, sessions locales)
+    ("Sydney", "ASX", "Australia/Sydney", [("10:00", "16:00")]),
+    ("Tokyo", "TSE", "Asia/Tokyo", [("09:00", "11:30"), ("12:30", "15:30")]),
+    ("Hong Kong", "HKEX", "Asia/Hong_Kong", [("09:30", "12:00"), ("13:00", "16:00")]),
+    ("Shanghai", "SSE", "Asia/Shanghai", [("09:30", "11:30"), ("13:00", "15:00")]),
+    ("Mumbai", "NSE", "Asia/Kolkata", [("09:15", "15:30")]),
+    ("Londres", "LSE", "Europe/London", [("08:00", "16:30")]),
+    ("Paris", "Euronext", "Europe/Paris", [("09:00", "17:30")]),
+    ("Francfort", "Xetra", "Europe/Berlin", [("09:00", "17:30")]),
+    ("New York", "NYSE", "America/New_York", [("09:30", "16:00")]),
+]
+STRIP = ["Sydney", "Tokyo", "Hong Kong", "Londres", "Paris", "New York"]
+PARIS = ZoneInfo("Europe/Paris")
+
+
+def market_strip():
+    cfg = [{"n": n, "x": x, "tz": tz, "s": ss} for n, x, tz, ss in MARKETS if n in STRIP]
+    cfg.sort(key=lambda m: STRIP.index(m["n"]))
+    page = """<style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@500;700&family=JetBrains+Mono:wght@500;700&display=swap');
+body{margin:0;font-family:Inter,sans-serif}#w{display:flex;gap:10px;overflow-x:auto;padding:4px 2px 8px}
+.m{flex:1 0 150px;padding:11px 14px;border-radius:14px;color:#E8ECF5;background:linear-gradient(160deg,rgba(255,255,255,.07),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.1)}
+.m.open{border-color:rgba(52,211,153,.45);box-shadow:0 0 18px rgba(52,211,153,.12)}.m.lunch{border-color:rgba(251,191,36,.4)}
+.h{display:flex;justify-content:space-between;align-items:baseline}.h b{font-size:.85rem}.h i{font-style:normal;font-size:.62rem;letter-spacing:1px;color:#6B7389}
+.t{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:1.3rem;margin:4px 0}
+.s{font-size:.68rem;color:#8B93A7;display:flex;align-items:center;gap:6px}.s u{width:7px;height:7px;border-radius:50%;background:#4B5367;flex:none}
+.open .s{color:#6EE7B7}.open u{background:#34D399;box-shadow:0 0 8px #34D399}.lunch .s{color:#FBBF24}.lunch u{background:#FBBF24}</style>
+<div id="w"></div><script>const M=__CFG__,w=document.getElementById('w');
+M.forEach((m,i)=>w.insertAdjacentHTML('beforeend','<div class="m" id="m'+i+'"><div class="h"><b>'+m.n+'</b><i>'+m.x+'</i></div><div class="t"></div><div class="s"><u></u><span></span></div></div>'));
+const mn=s=>{const a=s.split(':');return +a[0]*60+ +a[1]},fm=x=>Math.floor(x/60)+'h'+String(x%60).padStart(2,'0');
+function tick(){M.forEach((m,i)=>{const p=new Intl.DateTimeFormat('en-GB',{timeZone:m.tz,weekday:'short',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(new Date());
+const g=t=>p.find(x=>x.type===t).value,H=+g('hour')%24,cur=H*60+ +g('minute'),wd=g('weekday'),wk=wd!=='Sat'&&wd!=='Sun';
+let st='closed',tx=wk?'Fermé':'Week-end';
+if(wk){const ss=m.s.map(a=>[mn(a[0]),mn(a[1])]);for(let k=0;k<ss.length;k++){if(cur>=ss[k][0]&&cur<ss[k][1]){st='open';tx='Ouvert · ferme dans '+fm(ss[k][1]-cur);break}
+if(cur<ss[k][0]){st=k>0?'lunch':'closed';tx=(k>0?'Pause':'Fermé')+' · ouvre dans '+fm(ss[k][0]-cur);break}}}
+const e=document.getElementById('m'+i);e.className='m '+st;e.querySelector('.t').textContent=g('hour').replace('24','00')+':'+g('minute')+':'+g('second');e.querySelector('.s span').textContent=tx})}
+tick();setInterval(tick,1000)</script>""".replace("__CFG__", json.dumps(cfg))
+    components.html(page, height=108)
+
+
+# =====================================================================
+#  VUE DÉTAILLÉE (clic sur une carte)
+# =====================================================================
+@st.cache_data(ttl=900, show_spinner=False)
+def load_detail(ticker, period):
+    df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    return df.dropna(subset=["Close"])
+
+
+@st.dialog("Analyse détaillée", width="large")
+def detail_dialog(name, ticker, cat):
+    st.markdown(f'<div class="eyebrow">{cat} · {ticker}</div><h2 style="margin:2px 0 10px;font-weight:800">{html.escape(name)}</h2>',
+                unsafe_allow_html=True)
+    c1, c2 = st.columns([3, 2])
+    per = c1.radio("Période", ["1M", "3M", "6M", "1A", "5A"], index=1, horizontal=True, label_visibility="collapsed")
+    mode = c2.radio("Type", ["Ligne", "Chandeliers"], horizontal=True, label_visibility="collapsed")
+    try:
+        df = load_detail(ticker, {"1M": "1mo", "3M": "3mo", "6M": "6mo", "1A": "1y", "5A": "5y"}[per])
+        assert len(df) > 2
+    except Exception:
+        df = pd.DataFrame({"Close": load_all_data()[ticker].dropna()})
+        st.caption("Historique étendu indisponible : affichage sur 3 mois.")
+    cl = df["Close"].astype(float)
+    last, prev = cl.iloc[-1], cl.iloc[-2]
+    d = cl.diff()
+    gain, loss = d.clip(lower=0).rolling(14).mean(), (-d.clip(upper=0)).rolling(14).mean()
+    rsi = (100 - 100 / (1 + gain / loss)).iloc[-1]
+    perf, hi, lo = (last / cl.iloc[0] - 1) * 100, cl.max(), cl.min()
+    vol = cl.pct_change().std() * (252 ** .5) * 100
+    sgn = lambda v: "up" if v >= 0 else "dn"
+    tiles = [("Dernier", f"{last:,.2f}", ""), ("Variation jour", f"{(last / prev - 1) * 100:+.2f}%", sgn(last - prev)),
+             (f"Perf. {per}", f"{perf:+.2f}%", sgn(perf)), ("Volatilité ann.", f"{vol:.1f}%", ""),
+             ("Plus haut", f"{hi:,.2f}", ""), ("Plus bas", f"{lo:,.2f}", ""),
+             ("Écart au plus haut", f"{(last / hi - 1) * 100:.2f}%", "dn"),
+             ("RSI (14)", f"{rsi:.0f}" if pd.notna(rsi) else "n/a", "dn" if rsi > 70 else ("up" if rsi < 30 else ""))]
+    st.markdown('<div class="sg">' + "".join(f'<div class="sgt"><span>{a}</span><b class="{c}">{b}</b></div>' for a, b, c in tiles) + '</div>',
+                unsafe_allow_html=True)
+    pos = 0 if hi == lo else (last - lo) / (hi - lo) * 100
+    st.markdown(f'<div class="rb"><i style="left:calc({pos:.0f}% - 3px)"></i></div><div class="rl"><span>{lo:,.2f}</span>'
+                f'<span>position dans la fourchette {per}</span><span>{hi:,.2f}</span></div>', unsafe_allow_html=True)
+
+    has_vol = "Volume" in df and df["Volume"].fillna(0).sum() > 0
+    fig = make_subplots(rows=2 if has_vol else 1, cols=1, shared_xaxes=True, vertical_spacing=.03,
+                        row_heights=[.78, .22] if has_vol else [1])
+    col = UP if perf >= 0 else DN
+    if mode == "Chandeliers" and {"Open", "High", "Low"} <= set(df.columns):
+        fig.add_trace(go.Candlestick(x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=cl, name="Prix",
+                                     increasing_line_color=UP, decreasing_line_color=DN), row=1, col=1)
+    else:
+        fig.add_trace(go.Scatter(x=df.index, y=cl, name="Clôture", line=dict(color=col, width=2.6, shape="spline", smoothing=.5),
+                                 fill="tozeroy", fillcolor=hex_rgba(col, .08)), row=1, col=1)
+    for w_, c_ in ((20, "#FBBF24"), (50, "#A78BFA")):
+        if len(cl) > w_ + 2:
+            fig.add_trace(go.Scatter(x=df.index, y=cl.rolling(w_).mean(), name=f"MM{w_}", line=dict(color=c_, width=1.3, dash="dot")), row=1, col=1)
+    if has_vol:
+        fig.add_trace(go.Bar(x=df.index, y=df["Volume"], name="Volume", marker_color="rgba(129,140,248,.45)"), row=2, col=1)
+    lo_y, hi_y = float(cl.min()), float(cl.max())
+    fig.update_layout(height=440 if has_vol else 380, margin=dict(l=0, r=0, t=6, b=0), hovermode="x unified",
+                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(family="Inter", color="#CBD3E6"),
+                      xaxis_rangeslider_visible=False, legend=dict(orientation="h", y=1.07, x=0),
+                      hoverlabel=dict(bgcolor="#11142A", bordercolor=col))
+    fig.update_xaxes(gridcolor="rgba(255,255,255,.05)")
+    fig.update_yaxes(gridcolor="rgba(255,255,255,.05)")
+    fig.update_yaxes(range=[lo_y - (hi_y - lo_y) * .08, hi_y + (hi_y - lo_y) * .08], row=1, col=1)
+    show(fig, key="detail_chart")
+    with st.expander("Dernières séances"):
+        st.dataframe(df.tail(10).iloc[::-1].round(2), use_container_width=True)
+
+
+# =====================================================================
 #  SIDEBAR
 # =====================================================================
 st.sidebar.markdown(
@@ -315,7 +472,7 @@ st.sidebar.markdown(
     '<div class="brand-s">Global Markets</div></div></div>'
     f'<div class="live"><i></i>LIVE · {datetime.now(timezone.utc).strftime("%H:%M UTC")}</div>'
     '<div class="navlab">Navigation</div>', unsafe_allow_html=True)
-options = list(UNIVERSE.keys()) + ["📰 Actualités Macro (FR)", "📚 Base de Connaissances"]
+options = list(UNIVERSE.keys()) + ["🕐 Calendrier des Marchés", "📰 Actualités Macro (FR)", "📚 Base de Connaissances"]
 category = st.sidebar.radio("NAVIGATION", options, format_func=clean_label, label_visibility="collapsed")
 st.sidebar.markdown('<div style="margin-top:30px;font-size:.7rem;color:#4B5367;line-height:1.5">Données : Yahoo Finance · cache 5 min<br>Informations à but pédagogique, pas un conseil en investissement.</div>',
                     unsafe_allow_html=True)
@@ -323,6 +480,8 @@ st.sidebar.markdown('<div style="margin-top:30px;font-size:.7rem;color:#4B5367;l
 # =====================================================================
 #  PAGE : DONNÉES DE MARCHÉ
 # =====================================================================
+market_strip()
+
 if category in UNIVERSE:
     with st.spinner("Synchronisation avec les marchés..."):
         df_close = load_all_data()
@@ -363,11 +522,13 @@ if category in UNIVERSE:
 
                     with st.container(key=f"card_{i}"):
                         st.markdown(
-                            f'<div class="mt">{html.escape(name)}</div>'
+                            f'<div class="mt">{html.escape(name)}<svg class="ex" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></div>'
                             f'<div class="mrow"><span class="mv">{val_str}</span><span class="chip {cls}">{arrow} {pct:+.2f}%</span></div>'
                             f'<div class="sub">Tendance 30 j · <b class="{cls30}">{p30:+.1f}%</b></div>',
                             unsafe_allow_html=True)
-                        show(mini_chart(series.tail(30), color), key=f"mini_{i}")
+                        show(mini_chart(series.tail(30), color), key=f"mini_{i}", static=True)
+                        if st.button("Détails", key=f"btn_{i}"):
+                            detail_dialog(name, ticker, clean_label(category))
                 else:
                     st.warning(f"{name} : Données insuffisantes")
             else:
@@ -376,6 +537,73 @@ if category in UNIVERSE:
 # =====================================================================
 #  PAGE : ACTUALITÉS
 # =====================================================================
+elif category == "🕐 Calendrier des Marchés":
+    now = datetime.now(PARIS)
+    origin = datetime.combine(now.date(), datetime.min.time(), PARIS)
+    now_h = (now - origin).total_seconds() / 3600
+    hm = lambda h: f"{int(h) % 24:02d}:{int(round(h % 1 * 60)) % 60:02d}"
+    toM = lambda t: int(t[:2]) * 60 + int(t[3:])
+    reg = {"Asia": "#A78BFA", "Australia": "#A78BFA", "Europe": "#818CF8", "America": "#22D3EE"}
+
+    def bars(tz, sess):
+        z, res = ZoneInfo(tz), []
+        for dd in (-1, 0, 1):
+            day = datetime.now(z).date() + timedelta(days=dd)
+            if day.weekday() >= 5:
+                continue
+            for a_, b_ in sess:
+                h0 = (datetime.combine(day, datetime.strptime(a_, "%H:%M").time(), z) - origin).total_seconds() / 3600
+                h1 = (datetime.combine(day, datetime.strptime(b_, "%H:%M").time(), z) - origin).total_seconds() / 3600
+                if h1 > 0 and h0 < 24:
+                    res.append((max(h0, 0), min(h1, 24)))
+        return res
+
+    def status(tz, sess):
+        t = datetime.now(ZoneInfo(tz))
+        cur = t.hour * 60 + t.minute
+        if t.weekday() >= 5:
+            return "Week-end", ""
+        return ("Ouvert", "up") if any(toM(a_) <= cur < toM(b_) for a_, b_ in sess) else ("Fermé", "")
+
+    def paris_hours(tz, sess):
+        z = ZoneInfo(tz)
+        day = datetime.now(z).date()
+        conv = lambda t: datetime.combine(day, datetime.strptime(t, "%H:%M").time(), z).astimezone(PARIS).strftime("%H:%M")
+        return " · ".join(f"{conv(a_)}–{conv(b_)}" for a_, b_ in sess)
+
+    n_open = sum(status(tz, ss)[0] == "Ouvert" for _, _, tz, ss in MARKETS)
+    hero("Salle de marché", "Calendrier des Marchés", "Horaires convertis en heure de Paris · changement d'heure géré automatiquement",
+         f'<span class="pill up">{n_open}/{len(MARKETS)} places ouvertes</span><span class="pill">Paris {now:%H:%M}</span><span class="pill">Crypto 24/7 · Forex 24h/5j</span>')
+
+    sec("Les 24 prochaines heures", "Sessions de négociation (heure de Paris) · la ligne rouge marque l'instant présent")
+    fig = go.Figure()
+    for n_, x_, tz, ss in MARKETS:
+        for h0, h1 in bars(tz, ss):
+            fig.add_trace(go.Bar(y=[n_], x=[h1 - h0], base=[h0], orientation="h", marker=dict(color=reg.get(tz.split("/")[0], A1), line=dict(width=0)),
+                                 hovertemplate=f"<b>{n_}</b> · {x_}<br>{hm(h0)} – {hm(h1)}<extra></extra>", showlegend=False))
+    fig.add_trace(go.Bar(y=["Crypto"], x=[24], base=[0], orientation="h", marker=dict(color="#FBBF24", opacity=.55), hovertemplate="<b>Crypto</b> · 24/7<extra></extra>", showlegend=False))
+    fig.add_vline(x=now_h, line=dict(color=DN, width=2, dash="dot"), annotation_text="Maintenant", annotation_font_color=DN)
+    fig.update_layout(height=430, barmode="overlay", margin=dict(l=0, r=10, t=24, b=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      font=dict(family="Inter", color="#CBD3E6"), xaxis=dict(range=[0, 24], tickvals=list(range(0, 25, 2)), ticktext=[f"{h:02d}h" for h in range(0, 25, 2)],
+                                                                          gridcolor="rgba(255,255,255,.06)"),
+                      yaxis=dict(autorange="reversed", categoryorder="array", categoryarray=[m[0] for m in MARKETS] + ["Crypto"]))
+    show(fig, key="cal_gantt")
+
+    sec("Détail par place boursière", "Jours de négociation : lundi → vendredi · jours fériés locaux non inclus")
+    rows_ = ""
+    for n_, x_, tz, ss in MARKETS:
+        stt, cls = status(tz, ss)
+        loc = " · ".join(f"{a_}–{b_}" for a_, b_ in ss)
+        rows_ += (f'<tr><td>{n_}</td><td>{x_}</td><td class="mono">{loc}</td><td class="mono">{paris_hours(tz, ss)}</td>'
+                  f'<td>Lun–Ven</td><td><span class="pill {cls}">{stt}</span></td></tr>')
+    st.markdown('<table class="ct"><tr><th>Place</th><th>Bourse</th><th>Heures locales</th><th>Heure de Paris</th><th>Jours</th><th>Statut</th></tr>' + rows_ + '</table>',
+                unsafe_allow_html=True)
+    with st.expander("À savoir"):
+        st.markdown("- **Hong Kong** : la pause déjeuner (12h–13h) pourrait être supprimée : HKEX étudie un allongement des horaires.\n"
+                    "- **Tokyo** : clôture à 15h30 (horaires étendus depuis fin 2024).\n"
+                    "- **Pré-ouvertures / enchères de clôture** non représentées ici.\n"
+                    "- Vérifiez toujours le calendrier officiel de la bourse pour les jours fériés et demi-journées.")
+
 elif category == "📰 Actualités Macro (FR)":
     FEED = "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664"
     AGGREGATOR = "https://www.tradingview.com/news/"
@@ -400,8 +628,21 @@ elif category == "📰 Actualités Macro (FR)":
 
     @st.cache_data(ttl=86400, show_spinner=False)
     def fr(text):
+        text = (text or "").strip()
+        if not text:
+            return ""
+        for _ in range(3):
+            try:
+                out = GoogleTranslator(source='auto', target='fr').translate(text)
+                if out:
+                    return out
+            except Exception:
+                time.sleep(.6)
+        raise RuntimeError("translation failed")  # non mis en cache : nouvel essai au prochain chargement
+
+    def tr(text):
         try:
-            return GoogleTranslator(source='auto', target='fr').translate(text) or text
+            return fr(text)
         except Exception:
             return text
 
@@ -434,7 +675,10 @@ elif category == "📰 Actualités Macro (FR)":
             top_links = {n["link"] for n in top5}
             flux = sorted([n for n in news if n["link"] not in top_links], key=lambda n: n["ts"], reverse=True)[:15]
             for n in top5 + flux:
-                n["fr"] = fr(n["title"])
+                n["fr"] = tr(n["title"])
+                n["fr_sum"] = tr(n["summary"][:300].rsplit(" ", 1)[0]) if n["link"] in top_links else ""
+            if sum(n["fr"] == n["title"] for n in top5 + flux) > 10:
+                st.warning("Traduction momentanément indisponible : certains titres restent en anglais. Rechargez dans quelques instants.")
 
         if not news:
             st.warning("Aucune actualité trouvée.")
@@ -442,28 +686,38 @@ elif category == "📰 Actualités Macro (FR)":
             # ---------- SECTION A ----------
             sec("Le Résumé de la Semaine", "Top 5 · classé par impact macro & géopolitique estimé (banques centrales, inflation, conflits, énergie)")
 
-            def card(n, rank, big=False):
+            def slim(n, rank):
                 c = TAGS[n["tag"]][0]
-                dots = min(5, 1 + n["score"] // 3)
-                return (f'<a class="nc{" big" if big else ""}" style="--c:{c}" href="{html.escape(n["link"])}" target="_blank">'
-                        f'<div class="nc-top"><span class="rank">0{rank}</span><span class="tag">{n["tag"]}</span></div>'
-                        f'<div class="nc-t">{html.escape(n["fr"])}</div>'
-                        f'<div class="nc-m"><span>{fmt(n["ts"])}</span><span>·</span><span>CNBC</span><span>·</span>'
-                        f'<span>Impact <span class="dots">{"●" * dots}{"○" * (5 - dots)}</span></span></div></a>')
+                return (f'<a class="sl" style="--c:{c}" href="{html.escape(n["link"])}" target="_blank"><span class="rank">{rank}</span>'
+                        f'<div><div class="sl-t">{html.escape(n["fr"])}</div><div class="sl-m"><span class="tag">{n["tag"]}</span>'
+                        f'<span>{fmt(n["ts"])}</span></div></div></a>')
 
-            st.markdown(card(top5[0], 1, big=True), unsafe_allow_html=True)
-            c1, c2 = st.columns(2)
-            for j, n in enumerate(top5[1:], 2):
-                with (c1 if j % 2 == 0 else c2):
-                    st.markdown(card(n, j), unsafe_allow_html=True)
+            h = top5[0]
+            hc = TAGS[h["tag"]][0]
+            dots = min(5, 1 + h["score"] // 3)
+            L, R = st.columns([3, 2])
+            with L:
+                st.markdown(
+                    f'<a class="hl" style="--c:{hc}" href="{html.escape(h["link"])}" target="_blank">'
+                    f'<div class="nc-top" style="margin:0"><span class="rank">01</span><span class="tag">{h["tag"]}</span></div>'
+                    f'<div class="hl-t">{html.escape(h["fr"])}</div><div class="hl-s">{html.escape(h["fr_sum"])}</div>'
+                    f'<div class="nc-m"><span>{fmt(h["ts"])}</span><span>·</span><span>Impact <span class="dots" style="--c:{hc}">{"●" * dots}{"○" * (5 - dots)}</span></span>'
+                    f'<span>·</span><span>Lire l\'article ↗</span></div></a>', unsafe_allow_html=True)
+            with R:
+                st.markdown("".join(slim(n, j) for j, n in enumerate(top5[1:], 2)), unsafe_allow_html=True)
 
             # ---------- SECTION B ----------
             st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
             sec("Le Flux du Jour", "Dernières publications, de la plus récente à la plus ancienne",
                 f'<a class="btn" href="{AGGREGATOR}" target="_blank">Toutes les infos en temps réel '
                 '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg></a>')
+            opts = ["Tous"] + list(TAGS)
+            sel = (st.pills("Filtre", opts, default="Tous", label_visibility="collapsed") if hasattr(st, "pills")
+                   else st.radio("Filtre", opts, horizontal=True, label_visibility="collapsed"))
             rows_html = ""
             for n in flux:
+                if sel not in (None, "Tous") and n["tag"] != sel:
+                    continue
                 c = TAGS[n["tag"]][0]
                 rows_html += (f'<a class="fx" style="--c:{c}" href="{html.escape(n["link"])}" target="_blank">'
                               f'<span class="fx-t">{fmt(n["ts"])}</span><span class="tag" style="--c:{c}">{n["tag"]}</span>'
