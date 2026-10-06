@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
 import feedparser
+import requests_cache
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(
@@ -40,18 +41,15 @@ with col_head2:
 
 st.markdown("---")
 
-# --- DICTIONNAIRE EXHAUSTIF DES TICKERS (~80+ INDICATEURS) ---
+# --- DICTIONNAIRE DES TICKERS FIABILISÉS ---
 UNIVERSE = {
     "1. Taux & Banques Centrales": {
         "US 10Y Treasury Yield": "^TNX",
         "US 2Y Treasury Yield": "^IRX",
-        "Germany 10Y Bund": "TMBMKDE-10Y",
-        "France 10Y OAT": "TMBMKFR-10Y",
-        "UK 10Y Gilt": "TMBMKGB-10Y",
-        "Japan 10Y JGB": "TMBMKJP-10Y",
-        "Italy 10Y BTP": "TMBMKIT-10Y",
+        "Germany 10Y Bund": "^DE10Y=X",
+        "UK 10Y Gilt": "^GB10Y=X",
+        "Japan 10Y JGB": "^JP10Y=X",
         "VIX (Volatilité Actions)": "^VIX",
-        "MOVE Index (Volatilité Taux)": "^MOVE",
         "DXY (US Dollar Index)": "DX-Y.NYB"
     },
     "2. Devises (Forex)": {
@@ -61,7 +59,6 @@ UNIVERSE = {
         "USD/CHF": "USDCHF=X",
         "AUD/USD": "AUDUSD=X",
         "USD/CAD": "USDCAD=X",
-        "NZD/USD": "NZDUSD=X",
         "USD/BRL (Brésil)": "USDBRL=X",
         "USD/ZAR (Afrique du Sud)": "USDZAR=X",
         "USD/MXN (Mexique)": "USDMXN=X",
@@ -76,22 +73,15 @@ UNIVERSE = {
         "Euro Stoxx 50": "^STOXX50E",
         "CAC 40 (France)": "^FCHI",
         "DAX 40 (Allemagne)": "^GDAXI",
-        "FTSE 100 (UK)": "^FTSE",
-        "SMI (Suisse)": "^SSMI",
-        "FTSE MIB (Italie)": "FTSEMIB.MI",
-        "IBEX 35 (Espagne)": "^IBEX"
+        "FTSE 100 (UK)": "^FTSE"
     },
     "4. Actions Asie & Émergentes": {
         "Nikkei 225 (Japon)": "^N225",
-        "TOPIX (Japon)": "^TOPX",
         "Hang Seng (Hong Kong)": "^HSI",
-        "CSI 300 (Chine Continentale)": "000300.SS",
         "Shanghai Composite": "000001.SS",
         "Nifty 50 (Inde)": "^NSEI",
         "KOSPI (Corée du Sud)": "^KS11",
-        "ASX 200 (Australie)": "^AXJO",
-        "Bovespa (Brésil)": "^BVSP",
-        "IPC Mexico": "^MXX"
+        "Bovespa (Brésil)": "^BVSP"
     },
     "5. Mega-Caps & Big Tech": {
         "Apple (AAPL)": "AAPL",
@@ -103,31 +93,27 @@ UNIVERSE = {
         "Tesla (TSLA)": "TSLA",
         "TSMC (Semi-conducteurs)": "TSM",
         "ASML (Équipementiers Tech)": "ASML.AS",
-        "LVMH (Luxe Europe)": "MC.PA",
-        "Nestlé (Consommation)": "NESN.SW",
-        "Samsung Electronics": "005930.KS"
+        "LVMH (Luxe Europe)": "MC.PA"
     },
     "6. Matières Premières & Énergie": {
         "WTI Crude (Pétrole US)": "CL=F",
         "Brent Crude (Pétrole Global)": "BZ=F",
         "Natural Gas (Henry Hub)": "NG=F",
-        "TTF Gas (Gaz Europe)": "TTF=F",
         "Gold (Or)": "GC=F",
         "Silver (Argent)": "SI=F",
         "Copper (Cuivre - Baromètre Macro)": "HG=F",
-        "Platinum (Platine)": "PL=F",
-        "Palladium": "PA=F",
         "Wheat (Blé)": "ZW=F",
-        "Corn (Maïs)": "ZC=F",
-        "Soybeans (Soja)": "ZS=F"
+        "Corn (Maïs)": "ZC=F"
     }
 }
 
-# --- FONCTION DE FETCH ROBUSTE ---
+# --- FONCTION DE FETCH ROBUSTE AVEC SESSION HTTP ---
 @st.cache_data(ttl=600)
 def get_market_data(ticker_symbol):
     try:
-        t = yf.Ticker(ticker_symbol)
+        session = requests_cache.CachedSession('yfinance.cache', expire_after=300)
+        session.headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        t = yf.Ticker(ticker_symbol, session=session)
         df = t.history(period="6m")
         if df.empty or len(df) < 2:
             return None, 0.0, 0.0
@@ -187,12 +173,11 @@ with tabs[-1]:
     st.caption("Dernières dépêches et analyses financières mondiales en direct des marchés.")
     
     try:
-        # Flux RSS financier mondial open-source
         feed_url = "https://finance.yahoo.com/news/rss"
         news_feed = feedparser.parse(feed_url)
         
         if news_feed.entries:
-            for entry in news_feed.entries[:15]: # Affiche les 15 dernières news majeures
+            for entry in news_feed.entries[:15]:
                 pub_date = getattr(entry, 'published', 'Récemment')
                 st.markdown(f"""
                 <div class="news-card">
