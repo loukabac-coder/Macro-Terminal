@@ -4,188 +4,152 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
 import feedparser
-import requests_cache
 
-# --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(
-    page_title="Institutional Global Macro Terminal",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="PRO Macro Terminal", layout="wide", initial_sidebar_state="expanded")
 
-# --- DESIGN SYSTEM : BLOOMBERG / LINEAR DARK THEME ---
-st.markdown("""
+# --- DESIGN SYSTEM & CSS PREMIUM ---
+st.markdown('''
     <style>
-    .stApp { background-color: #090D16; color: #E2E8F0; font-family: 'Inter', -apple-system, sans-serif; }
-    h1, h2, h3 { color: #F8FAFC; font-weight: 700; letter-spacing: -0.025em; }
-    div[data-testid="stMetricValue"] { color: #F8FAFC; font-size: 20px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
-    div[data-testid="stMetricDelta"] { font-size: 12px; font-family: 'JetBrains Mono', monospace; }
-    div[data-testid="stMetricDelta"] svg { display: none; }
-    .stTabs [data-baseweb="tab-list"] { gap: 12px; background-color: #090D16; padding-bottom: 8px; border-bottom: 1px solid #1E293B; }
-    .stTabs [data-baseweb="tab"] { background-color: #111827; border-radius: 4px; padding: 6px 14px; border: 1px solid #1F2937; color: #94A3B8; font-weight: 500; font-size: 14px; }
-    .stTabs [aria-selected="true"] { background-color: #1E293B; border: 1px solid #3B82F6; color: #FFFFFF; }
-    .news-card { background-color: #111827; border: 1px solid #1F2937; padding: 12px 16px; border-radius: 6px; margin-bottom: 10px; }
-    .news-title { color: #F8FAFC; font-weight: 600; font-size: 15px; text-decoration: none; }
-    .news-title:hover { color: #3B82F6; }
-    .news-date { color: #64748B; font-size: 11px; margin-top: 4px; }
-    </style>
-""", unsafe_allow_html=True)
-
-# --- EN-TÊTE DU TERMINAL ---
-col_head1, col_head2 = st.columns([4, 1])
-with col_head1:
-    st.title("⚡ GLOBAL MACRO & MARKET TERMINAL")
-    st.caption("Flux Multi-Actifs en Temps Réel — Taux, Central Banks, FX, Indices mondiaux, Commodities & Actualités")
-with col_head2:
-    st.markdown(f"<div style='text-align: right; color: #10B981; font-family: monospace; font-weight: 600; padding-top: 15px;'>● CONNECTÉ<br><span style='color: #64748B; font-size: 10px;'>{datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</span></div>", unsafe_allow_html=True)
-
-st.markdown("---")
-
-# --- DICTIONNAIRE DES TICKERS FIABILISÉS ---
-UNIVERSE = {
-    "1. Taux & Banques Centrales": {
-        "US 10Y Treasury Yield": "^TNX",
-        "US 2Y Treasury Yield": "^IRX",
-        "Germany 10Y Bund": "^DE10Y=X",
-        "UK 10Y Gilt": "^GB10Y=X",
-        "Japan 10Y JGB": "^JP10Y=X",
-        "VIX (Volatilité Actions)": "^VIX",
-        "DXY (US Dollar Index)": "DX-Y.NYB"
-    },
-    "2. Devises (Forex)": {
-        "EUR/USD": "EURUSD=X",
-        "GBP/USD": "GBPUSD=X",
-        "USD/JPY": "USDJPY=X",
-        "USD/CHF": "USDCHF=X",
-        "AUD/USD": "AUDUSD=X",
-        "USD/CAD": "USDCAD=X",
-        "USD/BRL (Brésil)": "USDBRL=X",
-        "USD/ZAR (Afrique du Sud)": "USDZAR=X",
-        "USD/MXN (Mexique)": "USDMXN=X",
-        "USD/CNY (Yuan Chinois)": "USDCNY=X",
-        "USD/INR (Roupie Indienne)": "USDINR=X"
-    },
-    "3. Actions Développées": {
-        "S&P 500 (US)": "^GSPC",
-        "Nasdaq 100 (Tech US)": "^NDX",
-        "Dow Jones Industrial": "^DJI",
-        "Russell 2000 (Small Caps)": "^RUT",
-        "Euro Stoxx 50": "^STOXX50E",
-        "CAC 40 (France)": "^FCHI",
-        "DAX 40 (Allemagne)": "^GDAXI",
-        "FTSE 100 (UK)": "^FTSE"
-    },
-    "4. Actions Asie & Émergentes": {
-        "Nikkei 225 (Japon)": "^N225",
-        "Hang Seng (Hong Kong)": "^HSI",
-        "Shanghai Composite": "000001.SS",
-        "Nifty 50 (Inde)": "^NSEI",
-        "KOSPI (Corée du Sud)": "^KS11",
-        "Bovespa (Brésil)": "^BVSP"
-    },
-    "5. Mega-Caps & Big Tech": {
-        "Apple (AAPL)": "AAPL",
-        "Microsoft (MSFT)": "MSFT",
-        "Nvidia (NVDA)": "NVDA",
-        "Alphabet / Google (GOOGL)": "GOOGL",
-        "Amazon (AMZN)": "AMZN",
-        "Meta Platforms (META)": "META",
-        "Tesla (TSLA)": "TSLA",
-        "TSMC (Semi-conducteurs)": "TSM",
-        "ASML (Équipementiers Tech)": "ASML.AS",
-        "LVMH (Luxe Europe)": "MC.PA"
-    },
-    "6. Matières Premières & Énergie": {
-        "WTI Crude (Pétrole US)": "CL=F",
-        "Brent Crude (Pétrole Global)": "BZ=F",
-        "Natural Gas (Henry Hub)": "NG=F",
-        "Gold (Or)": "GC=F",
-        "Silver (Argent)": "SI=F",
-        "Copper (Cuivre - Baromètre Macro)": "HG=F",
-        "Wheat (Blé)": "ZW=F",
-        "Corn (Maïs)": "ZC=F"
+    /* Global Background */
+    .stApp { background-color: #030303; color: #FFFFFF; font-family: 'Inter', sans-serif; }
+    
+    /* Sidebar Styling */
+    .stSidebar { background-color: #0A0A0A !important; border-right: 1px solid #1a1a1a; }
+    
+    /* Custom Metric Cards */
+    .metric-card {
+        background: linear-gradient(145deg, #0d0d0d, #141414);
+        border: 1px solid #222222;
+        border-radius: 12px;
+        padding: 18px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        transition: all 0.3s ease;
+        margin-bottom: -15px; /* Pulls the chart closer */
     }
+    .metric-card:hover {
+        transform: translateY(-4px);
+        border-color: #3b82f6;
+        box-shadow: 0 8px 25px rgba(59, 130, 246, 0.15);
+    }
+    .metric-title { color: #888; font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+    .metric-value { color: #FFF; font-size: 1.8rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+    .metric-delta.positive { color: #10B981; font-size: 1rem; font-weight: 600; margin-left: 10px; font-family: 'JetBrains Mono', monospace; }
+    .metric-delta.negative { color: #EF4444; font-size: 1rem; font-weight: 600; margin-left: 10px; font-family: 'JetBrains Mono', monospace; }
+    
+    /* Headings */
+    h1 { font-weight: 800; background: -webkit-linear-gradient(0deg, #FFFFFF, #666666); -webkit-background-clip: text; -webkit-text-fill-color: transparent; padding-bottom: 10px;}
+    </style>
+''', unsafe_allow_html=True)
+
+# --- UNIVERSE DES ACTIFS (Tickers ultra-fiables) ---
+UNIVERSE = {
+    "🏛️ Taux & Macro": {"US 10Y": "^TNX", "US 2Y": "^IRX", "VIX Index": "^VIX", "DXY Dollar": "DX-Y.NYB", "MOVE Index": "^MOVE"},
+    "💱 Devises (FX)": {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "USDJPY=X", "USD/CHF": "USDCHF=X", "AUD/USD": "AUDUSD=X", "USD/CAD": "USDCAD=X"},
+    "🌍 Actions Globales": {"S&P 500": "^GSPC", "Nasdaq": "^NDX", "Dow Jones": "^DJI", "Euro Stoxx 50": "^STOXX50E", "CAC 40": "^FCHI", "DAX 40": "^GDAXI", "Nikkei 225": "^N225"},
+    "🚀 Tech & Mega-Caps": {"Apple": "AAPL", "Microsoft": "MSFT", "Nvidia": "NVDA", "Alphabet": "GOOGL", "Amazon": "AMZN", "Meta": "META", "Tesla": "TSLA", "LVMH": "MC.PA"},
+    "🛢️ Matières Premières": {"WTI Crude": "CL=F", "Brent Crude": "BZ=F", "Natural Gas": "NG=F", "Gold": "GC=F", "Silver": "SI=F", "Copper": "HG=F", "Wheat": "ZW=F"}
 }
 
-# --- FONCTION DE FETCH ROBUSTE AVEC SESSION HTTP ---
-@st.cache_data(ttl=600)
-def get_market_data(ticker_symbol):
-    try:
-        session = requests_cache.CachedSession('yfinance.cache', expire_after=300)
-        session.headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        t = yf.Ticker(ticker_symbol, session=session)
-        df = t.history(period="6m")
-        if df.empty or len(df) < 2:
-            return None, 0.0, 0.0
-        curr = df['Close'].iloc[-1]
-        prev = df['Close'].iloc[-2]
-        pct = ((curr - prev) / prev) * 100
-        return df, curr, pct
-    except Exception:
-        return None, 0.0, 0.0
+# --- FETCH DATA (REQUÊTE BATCH UNIQUE ANTI-BLOCAGE) ---
+@st.cache_data(ttl=300)
+def load_all_data():
+    all_tickers = []
+    for cat in UNIVERSE.values():
+        all_tickers.extend(cat.values())
+    # Télécharge tout en une seule fois (extrêmement rapide)
+    df = yf.download(all_tickers, period="3mo", threads=True, progress=False)
+    return df['Close']
 
-# --- FONCTION GRAPHIQUE MINIMALISTE PRO ---
-def mini_chart(df, color):
+# --- MINI CHART (DESIGN ÉPURÉ) ---
+def mini_chart(series, color):
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=df.index, y=df['Close'],
-        mode='lines', line=dict(color=color, width=1.5),
-        fill='tozeroy', fillcolor=f"rgba{tuple(int(color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)) + (0.08,)}"
+        x=series.index, y=series.values,
+        mode='lines', line=dict(color=color, width=2.5),
+        fill='tozeroy', 
+        fillcolor=f"rgba{tuple(int(color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)) + (0.15,)}"
     ))
     fig.update_layout(
-        margin=dict(l=0, r=0, t=10, b=0), height=85,
+        margin=dict(l=0, r=0, t=0, b=0), height=80,
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(showgrid=False, visible=False),
-        yaxis=dict(showgrid=False, visible=False)
+        yaxis=dict(showgrid=False, visible=False),
+        hovermode='x unified'
     )
     return fig
 
-# --- NAVIGATION PAR ONGLETS ---
-tabs = st.tabs(list(UNIVERSE.keys()) + ["7. 📰 News & Flux Macro En Direct"])
+# --- NAVIGATION SIDEBAR ---
+st.sidebar.title("⚡ MACRO TERMINAL")
+st.sidebar.markdown(f"<div style='color: #666; font-size: 0.8rem; margin-bottom: 30px;'>Live: {datetime.utcnow().strftime('%H:%M UTC')}</div>", unsafe_allow_html=True)
+category = st.sidebar.radio("NAVIGATION", list(UNIVERSE.keys()) + ["📰 Actualités & News"])
 
-for idx, (cat_name, assets) in enumerate(UNIVERSE.items()):
-    with tabs[idx]:
-        st.subheader(cat_name)
-        cols = st.columns(4)
-        for i, (name, ticker) in enumerate(assets.items()):
-            col = cols[i % 4]
-            df, price, delta = get_market_data(ticker)
-            
-            if df is not None:
-                is_rate_or_vix = "Yield" in name or "VIX" in name or "MOVE" in name
-                p_str = f"{price:.2f}%" if is_rate_or_vix and price < 30 else f"{price:,.2f}"
-                d_str = f"{delta:+.2f}%"
-                
-                color = "#10B981" if delta >= 0 else "#EF4444"
-                if "VIX" in name or "MOVE" in name: 
-                    color = "#EF4444" if delta >= 0 else "#10B981"
-
-                with col:
-                    st.metric(label=name, value=p_str, delta=d_str)
-                    st.plotly_chart(mini_chart(df, color), use_container_width=True)
-                    st.markdown("<div style='margin-bottom: 15px;'></div>", unsafe_allow_html=True)
-            else:
-                col.warning(f"Indisponible ({name})")
-
-# --- SECTION NEWS EN TEMPS RÉEL (FLUX RSS MONDIAL) ---
-with tabs[-1]:
-    st.subheader("📰 Actualités & Flux Macroéconomique en Temps Réel")
-    st.caption("Dernières dépêches et analyses financières mondiales en direct des marchés.")
+# --- CONTENU PRINCIPAL ---
+if category != "📰 Actualités & News":
+    st.title(category)
+    st.markdown("---")
     
-    try:
-        feed_url = "https://finance.yahoo.com/news/rss"
-        news_feed = feedparser.parse(feed_url)
+    with st.spinner("Synchronisation avec les marchés..."):
+        df_close = load_all_data()
         
-        if news_feed.entries:
-            for entry in news_feed.entries[:15]:
-                pub_date = getattr(entry, 'published', 'Récemment')
-                st.markdown(f"""
-                <div class="news-card">
-                    <a href="{entry.link}" target="_blank" class="news-title">{entry.title}</a>
-                    <div class="news-date">🕒 {pub_date}</div>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.info("Chargement du flux d'actualités en cours...")
-    except Exception as e:
-        st.error("Impossible de charger les actualités en direct pour le moment.")
+    assets = UNIVERSE[category]
+    cols = st.columns(4) # Grille de 4 colonnes
+    
+    for i, (name, ticker) in enumerate(assets.items()):
+        col = cols[i % 4]
+        with col:
+            # Vérification que la donnée a bien été téléchargée
+            if ticker in df_close.columns:
+                series = df_close[ticker].dropna()
+                if len(series) >= 2:
+                    curr = series.iloc[-1]
+                    prev = series.iloc[-2]
+                    pct = ((curr - prev) / prev) * 100
+                    
+                    is_rate = "10Y" in name or "2Y" in name or "VIX" in name or "MOVE" in name
+                    val_str = f"{curr:.2f}%" if is_rate and curr < 150 else f"{curr:,.2f}"
+                    pct_str = f"{pct:+.2f}%"
+                    
+                    color = "#10B981" if pct >= 0 else "#EF4444"
+                    delta_class = "positive" if pct >= 0 else "negative"
+                    
+                    # Logique inversée pour le VIX/MOVE (Rouge si ça monte)
+                    if "VIX" in name or "MOVE" in name:
+                        color = "#EF4444" if pct >= 0 else "#10B981"
+                        delta_class = "negative" if pct >= 0 else "positive"
+                        
+                    chart = mini_chart(series.tail(30), color)
+                    
+                    # Rendu de la carte CSS sur-mesure
+                    html_card = f'''
+                    <div class="metric-card">
+                        <div class="metric-title">{name}</div>
+                        <div>
+                            <span class="metric-value">{val_str}</span>
+                            <span class="metric-delta {delta_class}">{pct_str}</span>
+                        </div>
+                    </div>
+                    '''
+                    st.markdown(html_card, unsafe_allow_html=True)
+                    st.plotly_chart(chart, use_container_width=True, config={'displayModeBar': False})
+                else:
+                    st.warning(f"{name} : Pas assez de données")
+            else:
+                st.warning(f"{name} : Hors ligne")
+                
+else:
+    # --- ONGLET ACTUALITÉS (CSS Amélioré) ---
+    st.title("📰 Actualités Macro En Direct")
+    st.markdown("---")
+    feed_url = "https://finance.yahoo.com/news/rss"
+    try:
+        news_feed = feedparser.parse(feed_url)
+        for entry in news_feed.entries[:15]:
+            pub_date = getattr(entry, 'published', '')
+            st.markdown(f'''
+            <div style="background: linear-gradient(145deg, #0d0d0d, #141414); padding: 20px; border-radius: 12px; border: 1px solid #222; margin-bottom: 15px; transition: all 0.3s ease;">
+                <a href="{entry.link}" target="_blank" style="color: #FFF; font-size: 1.1rem; font-weight: 600; text-decoration: none;">{entry.title}</a>
+                <div style="color: #666; font-size: 0.8rem; margin-top: 8px;">🕒 {pub_date}</div>
+            </div>
+            ''', unsafe_allow_html=True)
+    except:
+        st.error("Impossible de charger les news.")
