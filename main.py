@@ -354,16 +354,19 @@ a.lk{display:block;text-decoration:none!important;color:inherit;height:100%}
 .ct a{color:var(--a2);text-decoration:none;font-weight:600}
 
 /* Barre latérale élargie */
-section[data-testid="stSidebar"][aria-expanded="true"]{min-width:370px!important;max-width:370px!important;width:370px!important}
 section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"],section[data-testid="stSidebar"] .block-container{padding-left:1.3rem;padding-right:1.3rem}
 section[data-testid="stSidebar"] div[role="radiogroup"]{gap:6px}
-section[data-testid="stSidebar"] div[role="radiogroup"]>label{padding:10px 14px;border-radius:16px}
+section[data-testid="stSidebar"] div[role="radiogroup"]>label{padding:9px 14px;border-radius:16px;min-height:62px;display:flex;align-items:center}
 section[data-testid="stSidebar"] div[role="radiogroup"]>label p{font-size:1.04rem;font-weight:600}
 section[data-testid="stSidebar"] div[role="radiogroup"]>label p::before{width:44px;height:44px;margin-right:14px;border-radius:14px;background:var(--ic) center/22px no-repeat,rgba(255,255,255,.06)}
 section[data-testid="stSidebar"] div[role="radiogroup"]>label:hover p::before{background:var(--ic) center/22px no-repeat,rgba(99,102,241,.25)}
 section[data-testid="stSidebar"] div[role="radiogroup"]>label:has(input:checked) p::before{background:var(--ic) center/22px no-repeat,linear-gradient(135deg,#6366F1,#22D3EE)}
 section[data-testid="stSidebar"] div[role="radiogroup"]>label:nth-child(10){margin-top:20px}
 .brand-t{font-size:1.25rem!important}.brand-logo{width:46px!important;height:46px!important}
+.sbh{font-size:.68rem;letter-spacing:2px;color:#5B6479;text-transform:uppercase;margin:26px 0 10px 6px}
+.qk{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:10px 14px;border-radius:13px;background:rgba(255,255,255,.04);border:1px solid var(--bd);margin-bottom:6px;font-size:.84rem}
+.qk b{font-weight:600;color:#CBD3E6}.qk span{font-family:'JetBrains Mono',monospace;font-size:.8rem}
+.qk .up{color:var(--up)}.qk .dn{color:var(--dn)}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -505,7 +508,7 @@ def kc(title, big="", body="", color="#A5B4FC"):
     return (f'<div class="kc" style="--c:{color}"><h4>{title}</h4>' + (f'<div class="big">{big}</div>' if big else "") + body + '</div>')
 
 
-# ---- BANQUES CENTRALES : taux lus en ligne (FRED, BCE, BoE, BRI) ; valeurs de référence = secours hors-ligne ----
+# ---- BANQUES CENTRALES : tout est lu en ligne (FRED, BCE, BoE, BRI, Eurostat) ; les valeurs de référence ne servent que de secours hors-ligne ----
 REF_DATE = date(2026, 10, 6)
 CB = {
     "Fed": dict(zone="États-Unis", lab="Fed funds · fourchette cible", c="#6366F1", ref=(3.75, 4.00), move="Hausse de +25 pb le 16/09/26 (vote 12-0)",
@@ -539,57 +542,60 @@ def upcoming(bank, today, n=1):
     return [m for m in MEETINGS[bank] if date.fromisoformat(m[1]) >= today][:n]
 
 
+UA = {"User-Agent": "Mozilla/5.0"}
+
+
 def _get(url, accept=None):
-    h = {"User-Agent": "Mozilla/5.0"}
+    h = dict(UA)
     if accept:
         h["Accept"] = accept
-    r = requests.get(url, headers=h, timeout=6)
+    r = requests.get(url, headers=h, timeout=7)
     r.raise_for_status()
     return r.text
 
 
-def _fred(sid):
-    d = pd.read_csv(io.StringIO(_get(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={sid}")))
-    d[d.columns[1]] = pd.to_numeric(d[d.columns[1]], errors="coerce")
-    d = d.dropna()
-    return float(d.iloc[-1, 1]), pd.to_datetime(d.iloc[-1, 0]).date()
+def _ser(df, dcol, vcol):
+    d = pd.DataFrame({"d": pd.to_datetime(df[dcol].astype(str).str.strip(), errors="coerce"), "v": pd.to_numeric(df[vcol], errors="coerce")}).dropna()
+    sr = d.set_index("d")["v"].sort_index()
+    return sr[~sr.index.duplicated(keep="last")]
 
 
-def _bis(code):  # taux directeurs de la BRI (Banque des règlements internationaux)
-    d = pd.read_csv(io.StringIO(_get(f"https://stats.bis.org/api/v2/data/dataflow/BIS/WS_CBPOL/1.0/D.{code}?lastNObservations=1&detail=dataonly",
+def _s_fred(sid):
+    d = pd.read_csv(io.StringIO(_get(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={sid}&cosd=2023-01-01")))
+    return _ser(d, d.columns[0], d.columns[1])
+
+
+def _s_ecb():
+    d = pd.read_csv(io.StringIO(_get("https://data-api.ecb.europa.eu/service/data/FM/B.U2.EUR.4F.KR.DFR.LEV?startPeriod=2023-01-01&format=csvdata")))
+    return _ser(d, "TIME_PERIOD", "OBS_VALUE")
+
+
+def _s_boe():
+    d = pd.read_csv(io.StringIO(_get("https://www.bankofengland.co.uk/boeapps/database/_iadb-fromshowcolumns.asp?csv.x=yes&Datefrom=01/Jan/2023&Dateto=now&SeriesCodes=IUDBEDR&CSVF=TN&UsingCodes=Y&VPD=Y&VFD=N")))
+    return _ser(d, d.columns[0], d.columns[1])
+
+
+def _s_bis(code):  # taux directeurs de la BRI
+    d = pd.read_csv(io.StringIO(_get(f"https://stats.bis.org/api/v2/data/dataflow/BIS/WS_CBPOL/1.0/D.{code}?startPeriod=2023-01-01&detail=dataonly",
                                      accept="application/vnd.sdmx.data+csv;version=1.0.0")))
-    return float(d["OBS_VALUE"].iloc[-1]), pd.to_datetime(str(d["TIME_PERIOD"].iloc[-1])).date()
+    return _ser(d, "TIME_PERIOD", "OBS_VALUE")
 
 
-def _src_fed():
-    hi, lo = _fred("DFEDTARU"), _fred("DFEDTARL")
-    return lo[0], hi[0], hi[1], "FRED"
+def _dup(sr, name):
+    return sr, sr, name
 
 
-def _src_ecb():
-    d = pd.read_csv(io.StringIO(_get("https://data-api.ecb.europa.eu/service/data/FM/B.U2.EUR.4F.KR.DFR.LEV?lastNObservations=1&format=csvdata")))
-    v = float(d["OBS_VALUE"].iloc[-1])
-    return v, v, pd.to_datetime(str(d["TIME_PERIOD"].iloc[-1])).date(), "BCE"
-
-
-def _src_boe():
-    t = _get("https://www.bankofengland.co.uk/boeapps/database/_iadb-fromshowcolumns.asp?csv.x=yes&Datefrom=01/Jan/2025&Dateto=now&SeriesCodes=IUDBEDR&CSVF=TN&UsingCodes=Y&VPD=Y&VFD=N")
-    d = pd.read_csv(io.StringIO(t)).dropna()
-    return float(d.iloc[-1, 1]), float(d.iloc[-1, 1]), pd.to_datetime(str(d.iloc[-1, 0]).strip()).date(), "Bank of England"
-
-
-def _wrap(fn, name):
-    def f():
-        v, dt = fn()
-        return v, v, dt, name
-    return f
+def last_change(sr):
+    dif = sr.diff()
+    ch = dif[dif.abs() > .001]
+    return (float(ch.iloc[-1]) * 100, ch.index[-1].date()) if len(ch) else None
 
 
 SOURCES = {
-    "Fed": [_src_fed, _wrap(lambda: _bis("US"), "BRI")],
-    "BCE": [_src_ecb, _wrap(lambda: _fred("ECBDFR"), "FRED"), _wrap(lambda: _bis("XM"), "BRI")],
-    "BoJ": [_wrap(lambda: _bis("JP"), "BRI")],
-    "BoE": [_src_boe, _wrap(lambda: _bis("GB"), "BRI")],
+    "Fed": [lambda: (_s_fred("DFEDTARL"), _s_fred("DFEDTARU"), "FRED"), lambda: _dup(_s_bis("US"), "BRI")],
+    "BCE": [lambda: _dup(_s_ecb(), "BCE"), lambda: _dup(_s_fred("ECBDFR"), "FRED"), lambda: _dup(_s_bis("XM"), "BRI")],
+    "BoJ": [lambda: _dup(_s_bis("JP"), "BRI")],
+    "BoE": [lambda: _dup(_s_boe(), "Bank of England"), lambda: _dup(_s_bis("GB"), "BRI")],
 }
 
 
@@ -599,14 +605,87 @@ def cb_live():
     for bank, fns in SOURCES.items():
         for fn in fns:
             try:
-                lo, hi, dt, src = fn()
+                lo_s, hi_s, src = fn()
+                lo, hi = float(lo_s.iloc[-1]), float(hi_s.iloc[-1])
                 if 0 <= lo <= hi <= 20:
-                    out[bank] = (lo, hi, dt, src)
+                    out[bank] = (lo, hi, hi_s.index[-1].date(), src, last_change(hi_s))
                     break
             except Exception:
                 continue
     if not out:
         raise RuntimeError("aucune source disponible")  # non mis en cache : nouvel essai au prochain chargement
+    return out
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def macro_live():
+    out = {}
+    try:
+        c = _s_fred("CPIAUCSL")
+        out["us_cpi"] = (float((c.iloc[-1] / c.iloc[-13] - 1) * 100), c.index[-1].date())
+        u = _s_fred("UNRATE")
+        out["us_u"] = (float(u.iloc[-1]), u.index[-1].date())
+    except Exception:
+        pass
+    for key, geo in (("ea_hicp", "EA"), ("fr_hicp", "FR")):
+        try:
+            j = requests.get("https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/prc_hicp_manr", headers=UA, timeout=8,
+                             params={"format": "JSON", "lang": "EN", "geo": geo, "coicop": "CP00", "unit": "RCH_A", "lastTimePeriod": 2}).json()
+            per, pos = max(j["dimension"]["time"]["category"]["index"].items(), key=lambda kv: kv[1])
+            if j["value"].get(str(pos)) is not None:
+                out[key] = (float(j["value"][str(pos)]), pd.to_datetime(per).date())
+        except Exception:
+            pass
+    for key, ctry in (("fr10", "FR"), ("de10", "DE")):
+        try:
+            d = pd.read_csv(io.StringIO(_get(f"https://data-api.ecb.europa.eu/service/data/IRS/M.{ctry}.L.L40.CI.0000.EUR.N.Z?lastNObservations=1&format=csvdata")))
+            out[key] = (float(d["OBS_VALUE"].iloc[-1]), pd.to_datetime(str(d["TIME_PERIOD"].iloc[-1])).date())
+        except Exception:
+            pass
+    if not out:
+        raise RuntimeError("aucune donnée macro")
+    return out
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def crypto_live():
+    j = requests.get("https://api.coingecko.com/api/v3/global", headers=UA, timeout=6).json()["data"]
+    return {"cap": j["total_market_cap"]["usd"] / 1e9, "btc": j["market_cap_percentage"]["btc"]}
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def gdp_live():
+    names = {"USA": "États-Unis", "CHN": "Chine", "DEU": "Allemagne", "JPN": "Japon", "IND": "Inde", "GBR": "Royaume-Uni", "FRA": "France", "ITA": "Italie", "BRA": "Brésil", "CAN": "Canada"}
+    j = requests.get("https://api.worldbank.org/v2/country/" + ";".join(names) + "/indicator/NY.GDP.MKTP.CD", headers=UA, timeout=8,
+                     params={"format": "json", "mrnev": 1, "per_page": 30}).json()[1]
+    out = {names[r["countryiso3code"]]: (r["value"] / 1e9, r["date"]) for r in j if r.get("value") and r.get("countryiso3code") in names}
+    if len(out) < 8:
+        raise RuntimeError("PIB incomplet")
+    return out
+
+
+QUICK_ALL = [("CAC 40", "^FCHI"), ("S&P 500", "^GSPC"), ("EUR/USD", "EURUSD=X"), ("USD/JPY", "USDJPY=X"), ("Or", "GC=F"), ("Brent", "BZ=F"), ("Bitcoin", "BTC-USD"), ("US 10Y", "^TNX")]
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def quick_quotes():
+    out, tk = {}, [t for _, t in QUICK_ALL]
+    try:
+        c = yf.download(tk, period="1mo", progress=False)["Close"]
+        for t in c.columns:
+            sr = c[t].dropna()
+            if len(sr) >= 2:
+                out[t] = (float(sr.iloc[-1]), float(sr.iloc[-1] / sr.iloc[-2] - 1) * 100)
+    except Exception:
+        pass
+    for t in tk:
+        if t not in out:
+            try:
+                sr = _chart(t, "1mo")
+                if len(sr) >= 2:
+                    out[t] = (float(sr.iloc[-1]), float(sr.iloc[-1] / sr.iloc[-2] - 1) * 100)
+            except Exception:
+                pass
     return out
 
 
@@ -632,27 +711,30 @@ def market_strip():
     cfg = [{"n": n, "x": x, "tz": tz, "s": ss} for n, x, tz, ss in MARKETS if n in STRIP]
     cfg.sort(key=lambda m: STRIP.index(m["n"]))
     page = """<style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@500;700&family=JetBrains+Mono:wght@500;700&display=swap');
-body{margin:0;font-family:Inter,sans-serif}#w{display:flex;gap:10px;overflow-x:auto;padding:4px 2px 8px}
-.m{flex:1 0 150px;padding:11px 14px;border-radius:14px;color:#E8ECF5;background:linear-gradient(160deg,rgba(255,255,255,.07),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.1)}
-.m.open{border-color:rgba(52,211,153,.45);box-shadow:0 0 18px rgba(52,211,153,.12)}.m.lunch{border-color:rgba(251,191,36,.4)}
-.h{display:flex;justify-content:space-between;align-items:baseline}.h b{font-size:.85rem}.h i{font-style:normal;font-size:.62rem;letter-spacing:1px;color:#6B7389}
-.t{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:1.3rem;margin:4px 0}
-.s{font-size:.68rem;color:#8B93A7;display:flex;align-items:center;gap:6px}.s u{width:7px;height:7px;border-radius:50%;background:#4B5367;flex:none}
+html,body{margin:0;overflow:hidden;background:transparent;font-family:Inter,sans-serif}
+#w{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;padding:2px}
+.m{min-width:0;padding:9px 12px;border-radius:13px;color:#E8ECF5;background:linear-gradient(160deg,rgba(255,255,255,.07),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.1)}
+.m.open{border-color:rgba(52,211,153,.45);box-shadow:0 0 16px rgba(52,211,153,.12)}.m.lunch{border-color:rgba(251,191,36,.4)}
+.h{display:flex;justify-content:space-between;align-items:baseline;gap:4px}.h b{font-size:.78rem;white-space:nowrap}.h i{font-style:normal;font-size:.55rem;letter-spacing:1px;color:#6B7389}
+.t{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:clamp(.8rem,1.6vw,1.2rem);margin:3px 0 2px;white-space:nowrap}
+.s{font-size:.68rem;color:#8B93A7;display:flex;align-items:center;gap:6px;font-weight:600}.s u{width:7px;height:7px;border-radius:50%;background:#4B5367;flex:none}
+.c{font-size:.6rem;color:#6B7389;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .open .s{color:#6EE7B7}.open u{background:#34D399;box-shadow:0 0 8px #34D399}.lunch .s{color:#FBBF24}.lunch u{background:#FBBF24}</style>
-<div id="w"></div><script>const M=__CFG__,w=document.getElementById('w');
-M.forEach((m,i)=>w.insertAdjacentHTML('beforeend','<div class="m" id="m'+i+'"><div class="h"><b>'+m.n+'</b><i>'+m.x+'</i></div><div class="t"></div><div class="s"><u></u><span></span></div></div>'));
-const mn=s=>{const a=s.split(':');return +a[0]*60+ +a[1]},fm=x=>Math.floor(x/60)+'h'+String(x%60).padStart(2,'0');
+<div id="w"></div><script>const M=__CFG__,w=document.getElementById('w'),D=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+M.forEach((m,i)=>w.insertAdjacentHTML('beforeend','<div class="m" id="m'+i+'"><div class="h"><b>'+m.n+'</b><i>'+m.x+'</i></div><div class="t"></div><div class="s"><u></u><span></span></div><div class="c"></div></div>'));
+const mn=s=>{const a=s.split(':');return +a[0]*60+ +a[1]},p2=x=>String(x).padStart(2,'0'),fm=x=>x>=1440?Math.floor(x/1440)+'j '+Math.floor(x%1440/60)+'h':Math.floor(x/60)+'h'+p2(x%60);
 function tick(){M.forEach((m,i)=>{const p=new Intl.DateTimeFormat('en-GB',{timeZone:m.tz,weekday:'short',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).formatToParts(new Date());
-const g=t=>p.find(x=>x.type===t).value,H=+g('hour')%24,cur=H*60+ +g('minute'),wd=g('weekday'),wk=wd!=='Sat'&&wd!=='Sun';
-let st='closed',tx=wk?'Fermé':'Week-end';
-if(wk){const ss=m.s.map(a=>[mn(a[0]),mn(a[1])]);for(let k=0;k<ss.length;k++){if(cur>=ss[k][0]&&cur<ss[k][1]){st='open';tx='Ouvert · ferme dans '+fm(ss[k][1]-cur);break}
-if(cur<ss[k][0]){st=k>0?'lunch':'closed';tx=(k>0?'Pause':'Fermé')+' · ouvre dans '+fm(ss[k][0]-cur);break}}}
-const e=document.getElementById('m'+i);e.className='m '+st;e.querySelector('.t').textContent=g('hour').replace('24','00')+':'+g('minute')+':'+g('second');e.querySelector('.s span').textContent=tx})}
+const g=t=>p.find(x=>x.type===t).value,H=+g('hour')%24,cur=H*60+ +g('minute'),wi=D.indexOf(g('weekday')),wk=wi<5,ss=m.s.map(a=>[mn(a[0]),mn(a[1])]);
+let st='closed',a=wk?'Fermé':'Week-end',c='';
+if(wk){for(let k=0;k<ss.length;k++){if(cur>=ss[k][0]&&cur<ss[k][1]){st='open';a='Ouvert';c='ferme dans '+fm(ss[k][1]-cur);break}
+if(cur<ss[k][0]){st=k>0?'lunch':'closed';a=k>0?'Pause':'Fermé';c='ouvre dans '+fm(ss[k][0]-cur);break}}}
+if(!c){for(let d=1;d<=7;d++){if((wi+d)%7<5){c='ouvre dans '+fm(d*1440+ss[0][0]-cur);break}}}
+const e=document.getElementById('m'+i);e.className='m '+st;e.querySelector('.t').textContent=g('hour').replace('24','00')+':'+g('minute')+':'+g('second');e.querySelector('.s span').textContent=a;e.querySelector('.c').textContent=c})}
 tick();setInterval(tick,1000)</script>""".replace("__CFG__", json.dumps(cfg))
     try:
-        st.iframe(page, height=108)  # Streamlit récent : components.html est déprécié
+        st.iframe(page, height=100)  # Streamlit récent : components.html est déprécié
     except Exception:
-        components.html(page, height=108)
+        components.html(page, height=100)
 
 
 # =====================================================================
@@ -744,6 +826,25 @@ st.sidebar.markdown(
 _k = list(UNIVERSE.keys())
 options = _k[:1] + ["🏦 Banques Centrales"] + _k[1:] + ["🕐 Calendrier des Marchés", "📰 Actualités Macro (FR)", "📚 Base de Connaissances"]
 category = st.sidebar.radio("NAVIGATION", options, format_func=clean_label, label_visibility="collapsed")
+
+
+@st.fragment(run_every="2m")
+def sidebar_panel():
+    q = quick_quotes()
+    rows = ""
+    for name, t in QUICK_ALL:
+        if t in q:
+            v, pc_ = q[t]
+            rows += f'<div class="qk"><b>{name}</b><span>{v:,.2f}</span><span class="{"up" if pc_ >= 0 else "dn"}">{pc_:+.2f}%</span></div>'
+    st.markdown('<div class="sbh">Aperçu des marchés</div>' + (rows or '<div class="qk"><b>Données en cours de chargement…</b></div>'), unsafe_allow_html=True)
+    today_ = datetime.now(PARIS).date()
+    nx = sorted((m[1], b_, m) for b_ in CB for m in upcoming(b_, today_))[:3]
+    st.markdown('<div class="sbh">Prochaines réunions</div>' + "".join(
+        f'<div class="qk"><b style="color:{CB[b_]["c"]}">{b_}</b><span>{fr_range(*m)}</span><span>{(date.fromisoformat(e_) - today_).days} j</span></div>' for e_, b_, m in nx), unsafe_allow_html=True)
+
+
+with st.sidebar:
+    sidebar_panel()
 st.sidebar.markdown('<div style="margin-top:30px;font-size:.7rem;color:#4B5367;line-height:1.5">Données : Yahoo Finance · cache 5 min<br>Informations à but pédagogique, pas un conseil en investissement.</div>',
                     unsafe_allow_html=True)
 
@@ -760,7 +861,10 @@ def render_market(cat):
     avail, missing = [], []
     for name, ticker in UNIVERSE[cat].items():
         sr = df_close[ticker].dropna() if ticker in df_close.columns else pd.Series(dtype=float)
-        (avail.append((name, ticker, sr)) if len(sr) >= 2 else missing.append(name))
+        if len(sr) >= 2:
+            avail.append((name, ticker, sr))
+        else:
+            missing.append(name)
     ups = sum(1 for _, _, sr in avail if sr.iloc[-1] >= sr.iloc[-2])
     hero("Marchés en temps réel", clean_label(cat),
          f"{len(avail)} instruments · actualisation automatique toutes les 4 min · dernière mise à jour {datetime.now(PARIS):%H:%M}",
@@ -792,38 +896,92 @@ def render_market(cat):
         st.caption("Temporairement indisponibles chez Yahoo Finance : " + ", ".join(missing))
 
 
-if category in UNIVERSE:
-    render_market(category)
-elif category == "🏦 Banques Centrales":
+FEED = "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664"
+AGGREGATOR = "https://www.tradingview.com/news/"
+TAGS = {
+    "Banques centrales": ("#818CF8", 5, ["fed", "federal reserve", "ecb", "boj", "bank of japan", "bank of england", "powell", "warsh", "lagarde", "rate cut", "rate hike", "interest rate", "central bank", "fomc"]),
+    "Inflation & Emploi": ("#FBBF24", 4, ["inflation", "cpi", "pce", "jobs", "payroll", "unemployment", "gdp", "recession", "layoffs", "consumer prices"]),
+    "Géopolitique": ("#FB7185", 4, ["war", "sanction", "iran", "russia", "ukraine", "china", "israel", "tariff", "trade war", "middle east", "taiwan", "election", "trump", "ceasefire"]),
+    "Énergie": ("#FB923C", 3, ["oil", "crude", "natural gas", "opec", "energy", "brent"]),
+    "Europe & France": ("#60A5FA", 3, ["france", "french", "macron", "eurozone", "euro zone", "european", "europe", "germany", "paris", "cac"]),
+    "Marchés": ("#22D3EE", 2, ["stocks", "s&p", "nasdaq", "dow", "yields", "treasury", "dollar", "bond", "bitcoin", "earnings", "wall street"]),
+}
+HOT = ["plunge", "surge", "soar", "crash", "record", "emergency", "shock", "collapse", "spike", "tumble", "warns", "default"]
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_news():
+    r = requests.get(FEED, headers={'User-Agent': 'Mozilla/5.0'}, timeout=6)
+    out = []
+    for e in feedparser.parse(r.content).entries[:40]:
+        ts = calendar.timegm(e.published_parsed) if getattr(e, "published_parsed", None) else 0
+        out.append({"title": e.title, "link": e.link, "ts": ts,
+                    "summary": re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", getattr(e, "summary", ""))).strip()})
+    return out
+
+def _tr(texts):
+    g = GoogleTranslator(source="en", target="fr")
+    out = (g.translate("\n".join(texts)) or "").split("\n")
+    return out if len(out) == len(texts) else g.translate_batch(texts)
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def fr_batch(texts):  # 1 seule requête, limitée à 18 s ; une erreur n'est pas mise en cache
+    ex = ThreadPoolExecutor(1)
+    try:
+        return tuple(ex.submit(_tr, list(texts)).result(timeout=18))
+    finally:
+        ex.shutdown(wait=False)
+
+def score(n):
+    txt = (n["title"] + " " + n["summary"]).lower()
+    total, best, bw = 0, "Marchés", 0
+    for tag, (_, w, kws) in TAGS.items():
+        v = w * min(sum(1 for k in kws if re.search(r"\b" + re.escape(k), txt)), 2)
+        total += v
+        if v > bw:
+            best, bw = tag, v
+    total += sum(1 for k in HOT if k in txt)
+    age = (time.time() - n["ts"]) / 3600 if n["ts"] else 99
+    return total + (2 if age < 6 else 1 if age < 24 else 0), best
+
+def fmt(ts):
+    return datetime.fromtimestamp(ts, tz=PARIS).strftime("%d/%m · %H:%M") if ts else "—"
+
+
+
+@st.fragment(run_every="10m")
+def render_bc():
     today = datetime.now(PARIS).date()
     try:
         live = cb_live()
     except Exception:
         live = {}
+    try:
+        mac = macro_live()
+    except Exception:
+        mac = {}
     pc = lambda lo, hi: (f"{lo:.2f}".replace(".", ",") + " %") if lo == hi else (f"{lo:.2f} – {hi:.2f} %".replace(".", ","))
     ST = {}
     for k_, m in CB.items():
         lo, hi = m["ref"]
-        info, mv = f"Référence au {REF_DATE:%d/%m/%Y} · source en ligne injoignable", m["move"]
+        info, mv, ch = f"Référence au {REF_DATE:%d/%m/%Y} · source en ligne injoignable", m["move"], None
         L = live.get(k_)
         if L and (L[2] >= REF_DATE or (abs(L[0] - lo) < .001 and abs(L[1] - hi) < .001)):
-            changed = abs(L[0] - lo) > .001 or abs(L[1] - hi) > .001
-            lo, hi, info = L[0], L[1], f"● En ligne · {L[3]} · obs. {L[2]:%d/%m/%Y}"
-            if changed:
-                mv = "Nouveau niveau détecté automatiquement"
-        ST[k_] = (lo, hi, info, mv)
-    hero("Politique monétaire", "Banques Centrales", "Taux actualisés automatiquement (toutes les heures) · cliquez sur une carte pour ouvrir la source officielle",
-         '<span class="pill">Fed · BCE · BoJ · BoE</span>')
+            lo, hi, info, ch = L[0], L[1], f"● En ligne · {L[3]} · obs. {L[2]:%d/%m/%Y}", L[4]
+            if ch:
+                mv = f"{'Hausse' if ch[0] > 0 else 'Baisse'} de {abs(ch[0]):.0f} pb · effective le {ch[1]:%d/%m/%Y}"
+        ST[k_] = (lo, hi, info, mv, ch)
+    hero("Politique monétaire", "Banques Centrales", "Tout se met à jour seul : taux, inflation, spreads, actualités et réunions · cliquez sur une carte pour ouvrir la source officielle",
+         f'<span class="pill">Actualisé à {datetime.now(PARIS):%H:%M}</span>')
     for col, (k_, m) in zip(st.columns(4), CB.items()):
-        lo, hi, info, mv = ST[k_]
+        lo, hi, info, mv, _ = ST[k_]
         nm = upcoming(k_, today)
         nxt = f"Prochaine : {fr_range(*nm[0])}" if nm else "Prochaine : calendrier à venir"
         with col:
             st.markdown(f'<a class="lk" href="{m["url"]}" target="_blank">' + kc(f'{k_} · {m["zone"]}', pc(lo, hi),
                         f'<p><b>{m["lab"]}</b></p><p>{mv}</p><span class="pill">{nxt}</span><p style="margin-top:10px;font-size:.72rem">{info}</p><div class="src">Site officiel ↗</div>',
                         m["c"]) + '</a>', unsafe_allow_html=True)
-    c1, c2 = st.columns([3, 2])
     mids = {k_: (v[0] + v[1]) / 2 for k_, v in ST.items()}
+    c1, c2 = st.columns([3, 2])
     with c1:
         sec("Niveau des taux directeurs", "En %, milieu de fourchette pour la Fed")
         ks = list(CB)[::-1]
@@ -837,28 +995,80 @@ elif category == "🏦 Banques Centrales":
         tl = [("Fed − BCE", mids["Fed"] - mids["BCE"]), ("Fed − BoJ", mids["Fed"] - mids["BoJ"]), ("BCE − BoJ", mids["BCE"] - mids["BoJ"]), ("BoE − BCE", mids["BoE"] - mids["BCE"])]
         st.markdown('<div class="sg" style="grid-template-columns:repeat(2,1fr)">' + "".join(
             f'<div class="sgt"><span>{a_}</span><b>{v * 100:+.0f} pb</b></div>' for a_, v in tl) + '</div>', unsafe_allow_html=True)
-        st.caption("Un écart élevé alimente le carry trade (emprunt en yen ou en euro, placement en dollar).")
+
+    sec("Tableau de bord macro", "Inflation, emploi et dette : données officielles lues en ligne (FRED, Eurostat, BCE)")
+    tiles = []
+    for key, lab, unit in (("us_cpi", "Inflation États-Unis", "%"), ("us_u", "Chômage États-Unis", "%"), ("ea_hicp", "Inflation zone euro", "%"), ("fr_hicp", "Inflation France", "%"),
+                           ("fr10", "Taux 10 ans France (OAT)", "%"), ("de10", "Taux 10 ans Allemagne (Bund)", "%")):
+        if key in mac:
+            tiles.append((f"{lab} · {mac[key][1]:%m/%Y}", f"{mac[key][0]:.2f} {unit}".replace(".", ",")))
+    if "fr10" in mac and "de10" in mac:
+        tiles.append(("Spread OAT-Bund", f"{(mac['fr10'][0] - mac['de10'][0]) * 100:.0f} pb"))
+    if tiles:
+        st.markdown('<div class="sg" style="grid-template-columns:repeat(4,1fr)">' + "".join(f'<div class="sgt"><span>{a_}</span><b>{b_}</b></div>' for a_, b_ in tiles) + '</div>', unsafe_allow_html=True)
+    else:
+        st.caption("Sources macro momentanément injoignables : elles seront relues automatiquement.")
+
+    notes = []
+    if "us_cpi" in mac:
+        r_ = mids["Fed"] - mac["us_cpi"][0]
+        notes.append(f"**Fed** : taux à {pc(*ST['Fed'][:2])} pour une inflation américaine de {mac['us_cpi'][0]:.1f} % (cible 2 %), soit un taux réel d'environ {r_:+.1f} pt : politique {'restrictive' if r_ > 1 else 'plutôt neutre' if r_ > 0 else 'encore accommodante'}.")
+    if "ea_hicp" in mac:
+        r_ = mids["BCE"] - mac["ea_hicp"][0]
+        fr_ = f", {mac['fr_hicp'][0]:.1f} % en France" if "fr_hicp" in mac else ""
+        notes.append(f"**BCE** : facilité de dépôt à {pc(*ST['BCE'][:2])} pour une inflation de {mac['ea_hicp'][0]:.1f} % en zone euro{fr_}, soit un taux réel de {r_:+.1f} pt. Les taux français sont ceux de la BCE.")
+    if "fr10" in mac and "de10" in mac:
+        sp = (mac["fr10"][0] - mac["de10"][0]) * 100
+        notes.append(f"**France** : l'OAT 10 ans rapporte {mac['fr10'][0]:.2f} % contre {mac['de10'][0]:.2f} % pour le Bund, un spread de {sp:.0f} pb ({'prime de risque élevée' if sp > 75 else 'prime de risque modérée'}).".replace(".", ",", 0))
+    gap = mids["Fed"] - mids["BoJ"]
+    notes.append(f"**Écart Fed − BoJ** : {gap * 100:.0f} pb. {'Terrain favorable au carry trade, avec un risque de débouclage si la BoJ continue de monter.' if gap > 1.5 else 'Écart modéré : le carry trade yen perd de son attrait.'}")
+    for k_, v in ST.items():
+        if v[4] and (today - v[4][1]).days <= 45:
+            notes.append(f"**{k_}** a modifié son taux il y a {(today - v[4][1]).days} jours ({v[4][0]:+.0f} pb).")
+    nx = sorted((m[1], b_, m) for b_ in CB for m in upcoming(b_, today))
+    if nx:
+        notes.append(f"**Prochain rendez-vous** : {nx[0][1]} le {fr_range(*nx[0][2])}, dans {(date.fromisoformat(nx[0][0]) - today).days} jours.")
+    sec("Lecture automatique", "Générée à partir des chiffres ci-dessus, elle évolue avec eux")
+    st.markdown("\n".join(f"- {n}" for n in notes))
+
+    sec("Réaction des marchés", "Cotations en direct")
+    q = quick_quotes()
+    st.markdown('<div class="sg" style="grid-template-columns:repeat(4,1fr)">' + "".join(
+        f'<div class="sgt"><span>{n_}</span><b class="{"up" if q[t][1] >= 0 else "dn"}">{q[t][0]:,.2f} · {q[t][1]:+.2f}%</b></div>' for n_, t in QUICK_ALL if t in q) + '</div>', unsafe_allow_html=True)
+
+    sec("Dernières actualités banques centrales", "Sélectionnées automatiquement dans le flux CNBC · titre d'origine et traduction")
+    try:
+        cbn = []
+        for n in fetch_news():
+            n = dict(n)
+            n["score"], n["tag"] = score(n)
+            if n["tag"] == "Banques centrales":
+                cbn.append(n)
+        cbn = sorted(cbn, key=lambda n: n["ts"], reverse=True)[:5]
+        try:
+            res = fr_batch(tuple(n["title"] for n in cbn))
+        except Exception:
+            res = [""] * len(cbn)
+        rows_h = "".join(f'<a class="fl" style="--c:#818CF8" href="{html.escape(n["link"])}" target="_blank"><span class="tm">{fmt(n["ts"])}</span>'
+                         f'<div><div class="en" style="font-weight:600;font-size:.9rem">{html.escape(n["title"])}</div><div class="fr">{html.escape(r_)}</div></div>'
+                         f'<span class="tag">Banques centrales</span></a>' for n, r_ in zip(cbn, res))
+        st.markdown(f'<div class="tp">{rows_h or "<div class=fr style=padding:16px>Aucune actualité récente.</div>"}</div>', unsafe_allow_html=True)
+    except Exception:
+        st.caption("Flux d'actualités momentanément indisponible.")
+
     sec("Prochaines réunions", "Calendrier officiel intégré : les dates passées disparaissent toutes seules")
-    rows_ = []
-    for k_ in CB:
-        for m_ in upcoming(k_, today, 2):
-            rows_.append((m_[1], k_, m_))
-    rows_.sort()
+    rows_ = sorted((m_[1], k_, m_) for k_ in CB for m_ in upcoming(k_, today, 2))
     st.markdown(table(["Date", "Banque", "Dans", "Calendrier officiel"], [
         [fr_range(*m_), f'<b style="color:{CB[k_]["c"]}">{k_}</b>', f"{(date.fromisoformat(e_) - today).days} j", f'<a href="{CB[k_]["cal"]}" target="_blank">Voir ↗</a>']
         for e_, k_, m_ in rows_[:8]]), unsafe_allow_html=True)
-    with st.expander(f"Contexte macro (au {REF_DATE:%d/%m/%Y})", expanded=True):
-        st.markdown("- **Choc énergétique** lié au conflit au Moyen-Orient : le pétrole a fortement monté et nourrit l'inflation partout.\n"
-                    "- **Fed** : présidée par Kevin Warsh, elle est passée d'un débat « statu quo ou hausse » à une hausse en septembre.\n"
-                    "- **BCE** : inflation attendue à 3,0 % en 2026, 2,5 % en 2027 et 2,1 % en 2028 selon ses projections de septembre.\n"
-                    "- **BoJ** : poursuite de la normalisation, l'inflation devant dépasser 2 % au second semestre de l'exercice 2026.\n"
-                    "- **BoE** : inflation à 3,1 % en août, trois membres du MPC voulaient déjà relever le taux.")
     with st.expander("Et la France ? Banque de France et taux"):
         st.markdown("- Les **taux directeurs en France sont ceux de la BCE** : la Banque de France fait partie de l'Eurosystème et son gouverneur siège au Conseil des gouverneurs.\n"
                     "- La Banque de France publie les **taux d'usure** (plafond légal des crédits) et son gouverneur donne un avis sur le **taux du Livret A**, fixé par l'État.\n"
-                    "- Le coût de la dette française se lit dans le **taux de l'OAT 10 ans** et son écart avec le Bund allemand (voir le glossaire).")
+                    "- Le coût de la dette française se lit dans le **taux de l'OAT 10 ans** et son écart avec le Bund allemand.")
 
-elif category == "🕐 Calendrier des Marchés":
+
+@st.fragment(run_every="1m")
+def render_cal():
     now = datetime.now(PARIS)
     origin = datetime.combine(now.date(), datetime.min.time(), PARIS)
     now_h = (now - origin).total_seconds() / 3600
@@ -925,57 +1135,9 @@ elif category == "🕐 Calendrier des Marchés":
                     "- **Pré-ouvertures / enchères de clôture** non représentées ici.\n"
                     "- Vérifiez toujours le calendrier officiel de la bourse pour les jours fériés et demi-journées.")
 
-elif category == "📰 Actualités Macro (FR)":
-    FEED = "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664"
-    AGGREGATOR = "https://www.tradingview.com/news/"
-    TAGS = {
-        "Banques centrales": ("#818CF8", 5, ["fed", "federal reserve", "ecb", "boj", "bank of japan", "bank of england", "powell", "warsh", "lagarde", "rate cut", "rate hike", "interest rate", "central bank", "fomc"]),
-        "Inflation & Emploi": ("#FBBF24", 4, ["inflation", "cpi", "pce", "jobs", "payroll", "unemployment", "gdp", "recession", "layoffs", "consumer prices"]),
-        "Géopolitique": ("#FB7185", 4, ["war", "sanction", "iran", "russia", "ukraine", "china", "israel", "tariff", "trade war", "middle east", "taiwan", "election", "trump", "ceasefire"]),
-        "Énergie": ("#FB923C", 3, ["oil", "crude", "natural gas", "opec", "energy", "brent"]),
-        "Europe & France": ("#60A5FA", 3, ["france", "french", "macron", "eurozone", "euro zone", "european", "europe", "germany", "paris", "cac"]),
-        "Marchés": ("#22D3EE", 2, ["stocks", "s&p", "nasdaq", "dow", "yields", "treasury", "dollar", "bond", "bitcoin", "earnings", "wall street"]),
-    }
-    HOT = ["plunge", "surge", "soar", "crash", "record", "emergency", "shock", "collapse", "spike", "tumble", "warns", "default"]
 
-    @st.cache_data(ttl=600, show_spinner=False)
-    def fetch_news():
-        r = requests.get(FEED, headers={'User-Agent': 'Mozilla/5.0'}, timeout=6)
-        out = []
-        for e in feedparser.parse(r.content).entries[:40]:
-            ts = calendar.timegm(e.published_parsed) if getattr(e, "published_parsed", None) else 0
-            out.append({"title": e.title, "link": e.link, "ts": ts,
-                        "summary": re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", getattr(e, "summary", ""))).strip()})
-        return out
-
-    def _tr(texts):
-        g = GoogleTranslator(source="en", target="fr")
-        out = (g.translate("\n".join(texts)) or "").split("\n")
-        return out if len(out) == len(texts) else g.translate_batch(texts)
-
-    @st.cache_data(ttl=86400, show_spinner=False)
-    def fr_batch(texts):  # 1 seule requête, limitée à 18 s ; une erreur n'est pas mise en cache
-        ex = ThreadPoolExecutor(1)
-        try:
-            return tuple(ex.submit(_tr, list(texts)).result(timeout=18))
-        finally:
-            ex.shutdown(wait=False)
-
-    def score(n):
-        txt = (n["title"] + " " + n["summary"]).lower()
-        total, best, bw = 0, "Marchés", 0
-        for tag, (_, w, kws) in TAGS.items():
-            v = w * min(sum(1 for k in kws if re.search(r"\b" + re.escape(k), txt)), 2)
-            total += v
-            if v > bw:
-                best, bw = tag, v
-        total += sum(1 for k in HOT if k in txt)
-        age = (time.time() - n["ts"]) / 3600 if n["ts"] else 99
-        return total + (2 if age < 6 else 1 if age < 24 else 0), best
-
-    def fmt(ts):
-        return datetime.fromtimestamp(ts, tz=PARIS).strftime("%d/%m · %H:%M") if ts else "—"
-
+@st.fragment(run_every="10m")
+def render_news():
     hero("Intelligence de marché", "Actualités Macro", "Titres d'origine (CNBC) classés par impact estimé, avec traduction française",
          '<span class="pill">Source · CNBC</span>')
     try:
@@ -1047,14 +1209,35 @@ elif category == "📰 Actualités Macro (FR)":
         except Exception:
             note.caption("Traduction momentanément indisponible : titres affichés en anglais. Rechargez dans un instant.")
 
+
+if category in UNIVERSE:
+    render_market(category)
+elif category == "🏦 Banques Centrales":
+    render_bc()
+elif category == "🕐 Calendrier des Marchés":
+    render_cal()
+elif category == "📰 Actualités Macro (FR)":
+    render_news()
+
+
 # =====================================================================
 #  PAGE : BASE DE CONNAISSANCES
 # =====================================================================
 elif category == "📚 Base de Connaissances":
     hero("Repères institutionnels", "Base de Connaissances", "France, marchés, taux, économies, matières premières et glossaire de salle de marché",
-         '<span class="pill">Ordres de grandeur 2025-2026</span>')
+         '<span class="pill">Ordres de grandeur 2025-2026 · crypto et PIB actualisés en ligne</span>')
+    try:
+        C_ = crypto_live()
+    except Exception:
+        C_ = {}
+    try:
+        G_ = gdp_live()
+    except Exception:
+        G_ = {}
+    CRY_TXT = f"≈ {C_['cap']:,.0f} Mds $".replace(",", " ") if C_ else "≈ 2 500 Mds $"
+    GD = lambda n_, d_: (f"≈ {G_[n_][0]:,.0f} Mds $ ({G_[n_][1]})".replace(",", " ") if n_ in G_ else d_)
     st.markdown('<div class="sg">' + "".join(f'<div class="sgt"><span>{a_}</span><b>{b_}</b></div>' for a_, b_ in [
-        ("PIB États-Unis", "≈ 28 000 Mds $"), ("PIB France", "≈ 3 100 Mds $"), ("Crypto-marché", "≈ 2 500 Mds $"),
+        ("PIB États-Unis", GD("États-Unis", "≈ 28 000 Mds $")), ("PIB France", GD("France", "≈ 3 100 Mds $")), ("Crypto-marché", CRY_TXT),
         ("Top 5 du S&P 500", "≈ 25 % de l'indice")]) + '</div>', unsafe_allow_html=True)
     T = st.tabs(["France", "Capitalisations", "Indices", "Banques centrales", "Économies", "Matières premières", "Blocs & Alliances", "Calendrier macro", "Glossaire"])
 
@@ -1103,8 +1286,8 @@ elif category == "📚 Base de Connaissances":
             show(fig, key="eu_caps")
             st.markdown("<p>Autres noms : </p>" + chips(["SAP", "Hermès", "TotalEnergies", "Sanofi", "Schneider Electric", "L'Oréal", "Airbus"]) + '</div>', unsafe_allow_html=True)
         with c2:
-            st.markdown('<div class="kc"><h4>Total crypto-marché</h4><div class="big" style="--c:#FBBF24">~2 500 Mds $</div>', unsafe_allow_html=True)
-            show(gauge(52.5, "Dominance du Bitcoin (≈ 50-55 %)", color="#F59E0B"), key="btc_dom")
+            st.markdown('<div class="kc"><h4>Total crypto-marché</h4><div class="big" style="--c:#FBBF24">' + CRY_TXT + '</div>', unsafe_allow_html=True)
+            show(gauge(round(C_["btc"], 1) if C_ else 52.5, "Dominance du Bitcoin", color="#F59E0B"), key="btc_dom")
             st.markdown('</div>', unsafe_allow_html=True)
         c1, c2 = st.columns([3, 2])
         with c1:
@@ -1158,6 +1341,9 @@ elif category == "📚 Base de Connaissances":
             st.markdown('<div class="kc"><h4>Top 10 · PIB nominal (Mds $, ordres de grandeur)</h4>', unsafe_allow_html=True)
             ce = ["États-Unis", "Chine", "Allemagne", "Japon", "Inde", "Royaume-Uni", "France", "Italie", "Brésil", "Canada"]
             ve = [28000, 18500, 4500, 4200, 3900, 3600, 3100, 2300, 2200, 2200]
+            if G_:
+                pr_ = sorted(((k, v[0]) for k, v in G_.items()), key=lambda kv: -kv[1])
+                ce, ve = [x[0] for x in pr_], [round(x[1]) for x in pr_]
             fig = go.Figure(go.Bar(y=ce, x=ve, orientation="h", text=[f"~{v:,}".replace(",", " ") for v in ve], textposition="outside", cliponaxis=False,
                                    marker=dict(color=["#60A5FA" if c == "France" else A1 for c in ce])))
             fig.update_layout(height=400, margin=dict(l=0, r=70, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
