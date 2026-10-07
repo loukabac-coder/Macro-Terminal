@@ -18,6 +18,8 @@ import streamlit.components.v1 as components
 from plotly.subplots import make_subplots
 from concurrent.futures import ThreadPoolExecutor
 import calendar
+import io
+from datetime import date
 
 st.set_page_config(page_title="PRO Macro Terminal", page_icon="◆", layout="wide", initial_sidebar_state="expanded")
 
@@ -122,13 +124,58 @@ UNIVERSE = {
 }
 
 
-@st.cache_data(ttl=300)
+@st.cache_resource
+def _last():
+    return {}  # dernières séries valides : évite les trous si Yahoo refuse un ticker ponctuellement
+
+
+def _chart(t, rng="3mo"):
+    """Secours : API graphique Yahoo en direct (indépendante de yfinance)."""
+    r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(t)}", params={"range": rng, "interval": "1d"},
+                     headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
+    r.raise_for_status()
+    res = r.json()["chart"]["result"][0]
+    sr = pd.Series(res["indicators"]["quote"][0]["close"], index=pd.to_datetime(res["timestamp"], unit="s").normalize(), dtype="float64").dropna()
+    return sr[~sr.index.duplicated(keep="last")]
+
+
+def _safe_chart(t):
+    try:
+        return _chart(t)
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=240, show_spinner=False)
 def load_all_data():
-    all_tickers = []
-    for cat in UNIVERSE.values():
-        all_tickers.extend(cat.values())
-    df = yf.download(all_tickers, period="3mo", threads=True, progress=False)
-    return df['Close']
+    all_tickers = list(dict.fromkeys(t for cat in UNIVERSE.values() for t in cat.values()))
+    got = {}
+    for i in range(0, len(all_tickers), 30):  # import par lots : contourne les blocages IP en production
+        chunk = all_tickers[i:i + 30]
+        try:
+            c = yf.download(chunk, period="3mo", threads=True, progress=False)["Close"]
+            if isinstance(c, pd.Series):
+                c = c.to_frame(chunk[0])
+            for t in c.columns:
+                sr = c[t].dropna()
+                if len(sr) >= 2:
+                    got[t] = sr
+        except Exception:
+            pass
+        time.sleep(.4)
+    miss = [t for t in all_tickers if t not in got]  # 2e chance : appel direct, 4 en parallèle
+    if miss:
+        with ThreadPoolExecutor(4) as ex:
+            for t, sr in zip(miss, ex.map(_safe_chart, miss)):
+                if sr is not None and len(sr) >= 2:
+                    got[t] = sr
+    last = _last()
+    for t in all_tickers:
+        if t in got:
+            last[t] = got[t]
+        elif t in last:
+            got[t] = last[t]
+    return pd.DataFrame(got)
 
 
 # =====================================================================
@@ -302,6 +349,21 @@ section[data-testid="stSidebar"] div[role="radiogroup"]>label:nth-child(10)::bef
 .fl{display:grid;grid-template-columns:96px 1fr auto;gap:12px;align-items:center;padding:10px 16px;text-decoration:none!important;border-bottom:1px solid rgba(255,255,255,.05);transition:.2s}
 .fl:last-child{border-bottom:0}.fl:hover{background:rgba(99,102,241,.1)}
 @media(max-width:760px){.tr{grid-template-columns:36px 1fr}.mt2{flex-direction:row;align-items:center;grid-column:2}.fl{grid-template-columns:1fr}}
+a.lk{display:block;text-decoration:none!important;color:inherit;height:100%}
+.lk .src{margin-top:8px;color:var(--a2);font-size:.78rem;font-weight:600}
+.ct a{color:var(--a2);text-decoration:none;font-weight:600}
+
+/* Barre latérale élargie */
+section[data-testid="stSidebar"][aria-expanded="true"]{min-width:370px!important;max-width:370px!important;width:370px!important}
+section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"],section[data-testid="stSidebar"] .block-container{padding-left:1.3rem;padding-right:1.3rem}
+section[data-testid="stSidebar"] div[role="radiogroup"]{gap:6px}
+section[data-testid="stSidebar"] div[role="radiogroup"]>label{padding:10px 14px;border-radius:16px}
+section[data-testid="stSidebar"] div[role="radiogroup"]>label p{font-size:1.04rem;font-weight:600}
+section[data-testid="stSidebar"] div[role="radiogroup"]>label p::before{width:44px;height:44px;margin-right:14px;border-radius:14px;background:var(--ic) center/22px no-repeat,rgba(255,255,255,.06)}
+section[data-testid="stSidebar"] div[role="radiogroup"]>label:hover p::before{background:var(--ic) center/22px no-repeat,rgba(99,102,241,.25)}
+section[data-testid="stSidebar"] div[role="radiogroup"]>label:has(input:checked) p::before{background:var(--ic) center/22px no-repeat,linear-gradient(135deg,#6366F1,#22D3EE)}
+section[data-testid="stSidebar"] div[role="radiogroup"]>label:nth-child(10){margin-top:20px}
+.brand-t{font-size:1.25rem!important}.brand-logo{width:46px!important;height:46px!important}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -443,14 +505,109 @@ def kc(title, big="", body="", color="#A5B4FC"):
     return (f'<div class="kc" style="--c:{color}"><h4>{title}</h4>' + (f'<div class="big">{big}</div>' if big else "") + body + '</div>')
 
 
-# ---- TAUX DIRECTEURS : À METTRE À JOUR APRÈS CHAQUE RÉUNION (saisie manuelle) ----
-CB_DATE = "06/10/2026"
-CB = [  # (banque, zone, affichage, valeur médiane, nom du taux, dernier mouvement, prochaine réunion, couleur)
-    ("Fed", "États-Unis", "3,75 – 4,00 %", 3.875, "Fed funds · fourchette cible", "Hausse de +25 pb le 16/09/26 (vote 12-0)", "Prochaine : 27-28 oct.", "#6366F1"),
-    ("BCE", "Zone euro", "2,50 %", 2.50, "Taux de la facilité de dépôt", "Hausse de +25 pb le 10/09/26 · refi 2,65 % · prêt marginal 2,90 %", "Prochaine : 29 oct.", "#22D3EE"),
-    ("BoJ", "Japon", "1,25 %", 1.25, "Taux au jour le jour", "Hausse de +25 pb le 18/09/26 (7-2) · plus haut depuis 1995", "Prochaine : 29-30 oct.", "#FB7185"),
-    ("BoE", "Royaume-Uni", "3,75 %", 3.75, "Bank Rate", "Statu quo le 17/09/26 (6-3, trois voix pour +25 pb)", "Prochaine : 5 nov.", "#34D399"),
-]
+# ---- BANQUES CENTRALES : taux lus en ligne (FRED, BCE, BoE, BRI) ; valeurs de référence = secours hors-ligne ----
+REF_DATE = date(2026, 10, 6)
+CB = {
+    "Fed": dict(zone="États-Unis", lab="Fed funds · fourchette cible", c="#6366F1", ref=(3.75, 4.00), move="Hausse de +25 pb le 16/09/26 (vote 12-0)",
+                url="https://www.federalreserve.gov/monetarypolicy/openmarket.htm", cal="https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"),
+    "BCE": dict(zone="Zone euro", lab="Taux de la facilité de dépôt", c="#22D3EE", ref=(2.50, 2.50), move="Hausse de +25 pb le 10/09/26 · refi 2,65 % · prêt marginal 2,90 %",
+                url="https://www.ecb.europa.eu/stats/policy_and_exchange_rates/key_ecb_interest_rates/html/index.en.html", cal="https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html"),
+    "BoJ": dict(zone="Japon", lab="Taux au jour le jour", c="#FB7185", ref=(1.25, 1.25), move="Hausse de +25 pb le 18/09/26 (7-2) · plus haut depuis 1995",
+                url="https://www.boj.or.jp/en/mopo/index.htm", cal="https://www.boj.or.jp/en/mopo/mpmsche_minu/index.htm"),
+    "BoE": dict(zone="Royaume-Uni", lab="Bank Rate", c="#34D399", ref=(3.75, 3.75), move="Statu quo le 17/09/26 (6-3, trois voix pour +25 pb)",
+                url="https://www.bankofengland.co.uk/monetary-policy/the-interest-rate-bank-rate", cal="https://www.bankofengland.co.uk/monetary-policy/upcoming-mpc-dates"),
+}
+# Calendriers officiels connus (début, fin). La prochaine réunion est calculée automatiquement.
+MEETINGS = {
+    "Fed": [("2026-10-27", "2026-10-28"), ("2026-12-08", "2026-12-09"), ("2027-01-26", "2027-01-27"), ("2027-03-16", "2027-03-17"), ("2027-04-27", "2027-04-28"),
+            ("2027-06-08", "2027-06-09"), ("2027-07-27", "2027-07-28"), ("2027-09-14", "2027-09-15"), ("2027-10-26", "2027-10-27"), ("2027-12-07", "2027-12-08")],
+    "BCE": [("2026-10-28", "2026-10-29"), ("2026-12-16", "2026-12-17"), ("2027-02-03", "2027-02-04"), ("2027-03-17", "2027-03-18"), ("2027-04-28", "2027-04-29")],
+    "BoJ": [("2026-10-29", "2026-10-30"), ("2026-12-17", "2026-12-18")],
+    "BoE": [("2026-11-05", "2026-11-05"), ("2026-12-17", "2026-12-17")],
+}
+MOIS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
+
+
+def fr_range(a_, b_):
+    a_, b_ = date.fromisoformat(a_), date.fromisoformat(b_)
+    if a_ == b_:
+        return f"{a_.day} {MOIS[a_.month - 1]} {a_.year}"
+    return f"{a_.day}-{b_.day} {MOIS[b_.month - 1]} {b_.year}" if a_.month == b_.month else f"{a_.day} {MOIS[a_.month - 1]} - {b_.day} {MOIS[b_.month - 1]} {b_.year}"
+
+
+def upcoming(bank, today, n=1):
+    return [m for m in MEETINGS[bank] if date.fromisoformat(m[1]) >= today][:n]
+
+
+def _get(url, accept=None):
+    h = {"User-Agent": "Mozilla/5.0"}
+    if accept:
+        h["Accept"] = accept
+    r = requests.get(url, headers=h, timeout=6)
+    r.raise_for_status()
+    return r.text
+
+
+def _fred(sid):
+    d = pd.read_csv(io.StringIO(_get(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={sid}")))
+    d[d.columns[1]] = pd.to_numeric(d[d.columns[1]], errors="coerce")
+    d = d.dropna()
+    return float(d.iloc[-1, 1]), pd.to_datetime(d.iloc[-1, 0]).date()
+
+
+def _bis(code):  # taux directeurs de la BRI (Banque des règlements internationaux)
+    d = pd.read_csv(io.StringIO(_get(f"https://stats.bis.org/api/v2/data/dataflow/BIS/WS_CBPOL/1.0/D.{code}?lastNObservations=1&detail=dataonly",
+                                     accept="application/vnd.sdmx.data+csv;version=1.0.0")))
+    return float(d["OBS_VALUE"].iloc[-1]), pd.to_datetime(str(d["TIME_PERIOD"].iloc[-1])).date()
+
+
+def _src_fed():
+    hi, lo = _fred("DFEDTARU"), _fred("DFEDTARL")
+    return lo[0], hi[0], hi[1], "FRED"
+
+
+def _src_ecb():
+    d = pd.read_csv(io.StringIO(_get("https://data-api.ecb.europa.eu/service/data/FM/B.U2.EUR.4F.KR.DFR.LEV?lastNObservations=1&format=csvdata")))
+    v = float(d["OBS_VALUE"].iloc[-1])
+    return v, v, pd.to_datetime(str(d["TIME_PERIOD"].iloc[-1])).date(), "BCE"
+
+
+def _src_boe():
+    t = _get("https://www.bankofengland.co.uk/boeapps/database/_iadb-fromshowcolumns.asp?csv.x=yes&Datefrom=01/Jan/2025&Dateto=now&SeriesCodes=IUDBEDR&CSVF=TN&UsingCodes=Y&VPD=Y&VFD=N")
+    d = pd.read_csv(io.StringIO(t)).dropna()
+    return float(d.iloc[-1, 1]), float(d.iloc[-1, 1]), pd.to_datetime(str(d.iloc[-1, 0]).strip()).date(), "Bank of England"
+
+
+def _wrap(fn, name):
+    def f():
+        v, dt = fn()
+        return v, v, dt, name
+    return f
+
+
+SOURCES = {
+    "Fed": [_src_fed, _wrap(lambda: _bis("US"), "BRI")],
+    "BCE": [_src_ecb, _wrap(lambda: _fred("ECBDFR"), "FRED"), _wrap(lambda: _bis("XM"), "BRI")],
+    "BoJ": [_wrap(lambda: _bis("JP"), "BRI")],
+    "BoE": [_src_boe, _wrap(lambda: _bis("GB"), "BRI")],
+}
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cb_live():
+    out = {}
+    for bank, fns in SOURCES.items():
+        for fn in fns:
+            try:
+                lo, hi, dt, src = fn()
+                if 0 <= lo <= hi <= 20:
+                    out[bank] = (lo, hi, dt, src)
+                    break
+            except Exception:
+                continue
+    if not out:
+        raise RuntimeError("aucune source disponible")  # non mis en cache : nouvel essai au prochain chargement
+    return out
 
 
 # =====================================================================
@@ -503,10 +660,15 @@ tick();setInterval(tick,1000)</script>""".replace("__CFG__", json.dumps(cfg))
 # =====================================================================
 @st.cache_data(ttl=900, show_spinner=False)
 def load_detail(ticker, period):
-    df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    return df.dropna(subset=["Close"])
+    try:
+        df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        df = df.dropna(subset=["Close"])
+        assert len(df) > 2
+        return df
+    except Exception:
+        return pd.DataFrame({"Close": _chart(ticker, period)})
 
 
 @st.dialog("Analyse détaillée", width="large")
@@ -590,88 +752,102 @@ st.sidebar.markdown('<div style="margin-top:30px;font-size:.7rem;color:#4B5367;l
 # =====================================================================
 market_strip()
 
-if category in UNIVERSE:
+
+@st.fragment(run_every="4m")
+def render_market(cat):
     with st.spinner("Synchronisation avec les marchés..."):
         df_close = load_all_data()
-
-    assets = UNIVERSE[category]
-    rows = []
-    for name, ticker in assets.items():
-        if ticker in df_close.columns:
-            s = df_close[ticker].dropna()
-            if len(s) >= 2:
-                rows.append((name, ticker, s))
-
-    ups = sum(1 for _, _, s in rows if s.iloc[-1] >= s.iloc[-2])
-    downs = len(rows) - ups
-    hero("Marchés en temps réel", clean_label(category),
-         f"{len(assets)} instruments suivis · variation vs clôture précédente",
-         f'<span class="pill up">▲ {ups} en hausse</span><span class="pill dn">▼ {downs} en baisse</span>')
-
+    avail, missing = [], []
+    for name, ticker in UNIVERSE[cat].items():
+        sr = df_close[ticker].dropna() if ticker in df_close.columns else pd.Series(dtype=float)
+        (avail.append((name, ticker, sr)) if len(sr) >= 2 else missing.append(name))
+    ups = sum(1 for _, _, sr in avail if sr.iloc[-1] >= sr.iloc[-2])
+    hero("Marchés en temps réel", clean_label(cat),
+         f"{len(avail)} instruments · actualisation automatique toutes les 4 min · dernière mise à jour {datetime.now(PARIS):%H:%M}",
+         f'<span class="pill up">▲ {ups} en hausse</span><span class="pill dn">▼ {len(avail) - ups} en baisse</span>')
     cols = st.columns(4)
-    for i, (name, ticker) in enumerate(assets.items()):
+    for i, (name, ticker, series) in enumerate(avail):
         with cols[i % 4]:
-            if ticker in df_close.columns:
-                series = df_close[ticker].dropna()
-                if len(series) >= 2:
-                    curr, prev = series.iloc[-1], series.iloc[-2]
-                    pct = ((curr - prev) / prev) * 100
-                    base30 = series.tail(30).iloc[0]
-                    p30 = ((curr - base30) / base30) * 100
+            curr, prev = series.iloc[-1], series.iloc[-2]
+            pct = ((curr - prev) / prev) * 100
+            base30 = series.tail(30).iloc[0]
+            p30 = ((curr - base30) / base30) * 100
+            is_rate = "10Y" in name or "2Y" in name or "VIX" in name or "MOVE" in name
+            val_str = f"{curr:.2f}%" if is_rate and curr < 150 else f"{curr:,.2f}"
+            inverse = "VIX" in name or "MOVE" in name
+            good = (pct < 0) if inverse else (pct >= 0)
+            good30 = (p30 < 0) if inverse else (p30 >= 0)
+            color = UP if good else DN
+            cls, cls30 = ("up" if good else "dn"), ("up" if good30 else "dn")
+            arrow = "▲" if pct >= 0 else "▼"
+            with st.container(key=f"card_{i}"):
+                st.markdown(
+                    f'<div class="mt">{html.escape(name)}<svg class="ex" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></div>'
+                    f'<div class="mrow"><span class="mv">{val_str}</span><span class="chip {cls}">{arrow} {pct:+.2f}%</span></div>'
+                    f'<div class="sub">Tendance 30 j · <b class="{cls30}">{p30:+.1f}%</b></div>', unsafe_allow_html=True)
+                show(mini_chart(series.tail(30), color), key=f"mini_{i}", static=True)
+                if st.button("Détails", key=f"btn_{i}"):
+                    detail_dialog(name, ticker, clean_label(cat))
+    if missing:
+        st.caption("Temporairement indisponibles chez Yahoo Finance : " + ", ".join(missing))
 
-                    is_rate = "10Y" in name or "2Y" in name or "VIX" in name or "MOVE" in name
-                    val_str = f"{curr:.2f}%" if is_rate and curr < 150 else f"{curr:,.2f}"
-                    inverse = "VIX" in name or "MOVE" in name
-                    good = (pct < 0) if inverse else (pct >= 0)
-                    good30 = (p30 < 0) if inverse else (p30 >= 0)
-                    color = UP if good else DN
-                    cls, cls30 = ("up" if good else "dn"), ("up" if good30 else "dn")
-                    arrow = "▲" if pct >= 0 else "▼"
 
-                    with st.container(key=f"card_{i}"):
-                        st.markdown(
-                            f'<div class="mt">{html.escape(name)}<svg class="ex" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></div>'
-                            f'<div class="mrow"><span class="mv">{val_str}</span><span class="chip {cls}">{arrow} {pct:+.2f}%</span></div>'
-                            f'<div class="sub">Tendance 30 j · <b class="{cls30}">{p30:+.1f}%</b></div>',
-                            unsafe_allow_html=True)
-                        show(mini_chart(series.tail(30), color), key=f"mini_{i}", static=True)
-                        if st.button("Détails", key=f"btn_{i}"):
-                            detail_dialog(name, ticker, clean_label(category))
-                else:
-                    st.warning(f"{name} : Données insuffisantes")
-            else:
-                st.warning(f"{name} : Hors ligne")
-
-# =====================================================================
-#  PAGE : ACTUALITÉS
-# =====================================================================
+if category in UNIVERSE:
+    render_market(category)
 elif category == "🏦 Banques Centrales":
-    hero("Politique monétaire", "Banques Centrales", f"Taux directeurs · saisie manuelle au {CB_DATE}, à vérifier sur les sites officiels",
+    today = datetime.now(PARIS).date()
+    try:
+        live = cb_live()
+    except Exception:
+        live = {}
+    pc = lambda lo, hi: (f"{lo:.2f}".replace(".", ",") + " %") if lo == hi else (f"{lo:.2f} – {hi:.2f} %".replace(".", ","))
+    ST = {}
+    for k_, m in CB.items():
+        lo, hi = m["ref"]
+        info, mv = f"Référence au {REF_DATE:%d/%m/%Y} · source en ligne injoignable", m["move"]
+        L = live.get(k_)
+        if L and (L[2] >= REF_DATE or (abs(L[0] - lo) < .001 and abs(L[1] - hi) < .001)):
+            changed = abs(L[0] - lo) > .001 or abs(L[1] - hi) > .001
+            lo, hi, info = L[0], L[1], f"● En ligne · {L[3]} · obs. {L[2]:%d/%m/%Y}"
+            if changed:
+                mv = "Nouveau niveau détecté automatiquement"
+        ST[k_] = (lo, hi, info, mv)
+    hero("Politique monétaire", "Banques Centrales", "Taux actualisés automatiquement (toutes les heures) · cliquez sur une carte pour ouvrir la source officielle",
          '<span class="pill">Fed · BCE · BoJ · BoE</span>')
-    for col, (n_, zone, rate, val, lab, move, nxt, c_) in zip(st.columns(4), CB):
+    for col, (k_, m) in zip(st.columns(4), CB.items()):
+        lo, hi, info, mv = ST[k_]
+        nm = upcoming(k_, today)
+        nxt = f"Prochaine : {fr_range(*nm[0])}" if nm else "Prochaine : calendrier à venir"
         with col:
-            st.markdown(kc(f"{n_} · {zone}", rate, f"<p><b>{lab}</b></p><p>{move}</p><span class='pill'>{nxt}</span>", c_), unsafe_allow_html=True)
+            st.markdown(f'<a class="lk" href="{m["url"]}" target="_blank">' + kc(f'{k_} · {m["zone"]}', pc(lo, hi),
+                        f'<p><b>{m["lab"]}</b></p><p>{mv}</p><span class="pill">{nxt}</span><p style="margin-top:10px;font-size:.72rem">{info}</p><div class="src">Site officiel ↗</div>',
+                        m["c"]) + '</a>', unsafe_allow_html=True)
     c1, c2 = st.columns([3, 2])
+    mids = {k_: (v[0] + v[1]) / 2 for k_, v in ST.items()}
     with c1:
         sec("Niveau des taux directeurs", "En %, milieu de fourchette pour la Fed")
-        fig = go.Figure(go.Bar(y=[x[0] for x in CB][::-1], x=[x[3] for x in CB][::-1], orientation="h", text=[x[2] for x in CB][::-1],
-                               textposition="outside", cliponaxis=False, marker=dict(color=[x[7] for x in CB][::-1])))
+        ks = list(CB)[::-1]
+        fig = go.Figure(go.Bar(y=ks, x=[mids[k_] for k_ in ks], orientation="h", text=[pc(*ST[k_][:2]) for k_ in ks], textposition="outside",
+                               cliponaxis=False, marker=dict(color=[CB[k_]["c"] for k_ in ks])))
         fig.update_layout(height=260, margin=dict(l=0, r=90, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                          xaxis=dict(visible=False, range=[0, 5]), font=dict(family="Inter", color="#fff"))
+                          xaxis=dict(visible=False, range=[0, max(5, max(mids.values()) * 1.3)]), font=dict(family="Inter", color="#fff"))
         show(fig, key="cb_bar")
     with c2:
         sec("Écarts de taux", "En points de base (pb)")
-        d_ = {x[0]: x[3] for x in CB}
-        tl = [("Fed − BCE", d_["Fed"] - d_["BCE"]), ("Fed − BoJ", d_["Fed"] - d_["BoJ"]), ("BCE − BoJ", d_["BCE"] - d_["BoJ"]), ("BoE − BCE", d_["BoE"] - d_["BCE"])]
+        tl = [("Fed − BCE", mids["Fed"] - mids["BCE"]), ("Fed − BoJ", mids["Fed"] - mids["BoJ"]), ("BCE − BoJ", mids["BCE"] - mids["BoJ"]), ("BoE − BCE", mids["BoE"] - mids["BCE"])]
         st.markdown('<div class="sg" style="grid-template-columns:repeat(2,1fr)">' + "".join(
             f'<div class="sgt"><span>{a_}</span><b>{v * 100:+.0f} pb</b></div>' for a_, v in tl) + '</div>', unsafe_allow_html=True)
         st.caption("Un écart élevé alimente le carry trade (emprunt en yen ou en euro, placement en dollar).")
-    sec("Prochaines échéances", "Dates prévues · à confirmer sur le calendrier officiel de chaque banque")
-    st.markdown(table(["Date", "Banque", "Événement"], [
-        ["27-28 oct.", "Fed", "Réunion du FOMC"], ["29 oct.", "BCE", "Décision de politique monétaire (14h15, heure de Paris)"],
-        ["29-30 oct.", "BoJ", "Réunion de politique monétaire"], ["5 nov.", "BoE", "Décision du MPC + Monetary Policy Report"],
-        ["17 déc.", "BCE · BoE", "Dernières décisions de l'année"]]), unsafe_allow_html=True)
-    with st.expander("Contexte macro (automne 2026)", expanded=True):
+    sec("Prochaines réunions", "Calendrier officiel intégré : les dates passées disparaissent toutes seules")
+    rows_ = []
+    for k_ in CB:
+        for m_ in upcoming(k_, today, 2):
+            rows_.append((m_[1], k_, m_))
+    rows_.sort()
+    st.markdown(table(["Date", "Banque", "Dans", "Calendrier officiel"], [
+        [fr_range(*m_), f'<b style="color:{CB[k_]["c"]}">{k_}</b>', f"{(date.fromisoformat(e_) - today).days} j", f'<a href="{CB[k_]["cal"]}" target="_blank">Voir ↗</a>']
+        for e_, k_, m_ in rows_[:8]]), unsafe_allow_html=True)
+    with st.expander(f"Contexte macro (au {REF_DATE:%d/%m/%Y})", expanded=True):
         st.markdown("- **Choc énergétique** lié au conflit au Moyen-Orient : le pétrole a fortement monté et nourrit l'inflation partout.\n"
                     "- **Fed** : présidée par Kevin Warsh, elle est passée d'un débat « statu quo ou hausse » à une hausse en septembre.\n"
                     "- **BCE** : inflation attendue à 3,0 % en 2026, 2,5 % en 2027 et 2,1 % en 2028 selon ses projections de septembre.\n"
@@ -1066,7 +1242,50 @@ elif category == "📚 Base de Connaissances":
               ("Taux réel", "Taux nominal moins l'inflation."),
               ("Stagflation", "Croissance faible avec inflation élevée."),
               ("Soft / Hard landing", "Ralentissement maîtrisé de l'économie / récession brutale."),
-              ("PMI", "Indice des directeurs d'achat : au-dessus de 50, l'activité progresse.")]
+              ("PMI", "Indice des directeurs d'achat : au-dessus de 50, l'activité progresse."),
+              ("Capitalisation boursière", "Valeur d'une entreprise cotée : cours de l'action × nombre d'actions. Large cap : plus de 10 Mds $ ; mid cap : 2 à 10 Mds $ ; small cap : moins de 2 Mds $."),
+              ("Inflation", "Hausse générale et durable des prix : la monnaie perd du pouvoir d'achat."),
+              ("Désinflation", "L'inflation ralentit mais reste positive : les prix montent toujours, moins vite (de 6 % à 3 % par an, par exemple)."),
+              ("Déflation", "Baisse générale des prix (inflation négative). Dangereuse car les ménages reportent leurs achats et l'activité s'enraye."),
+              ("Hyperinflation", "Inflation extrême, souvent plus de 50 % par mois : la monnaie s'effondre."),
+              ("Récession", "Recul du PIB pendant au moins deux trimestres consécutifs."),
+              ("PIB", "Produit intérieur brut : valeur de tout ce qu'un pays produit en un an."),
+              ("Croissance", "Variation du PIB d'une période à l'autre, en %."),
+              ("Taux de chômage", "Part des actifs sans emploi qui en cherchent un."),
+              ("Pouvoir d'achat", "Quantité de biens qu'un revenu permet d'acheter ; baisse si les prix montent plus vite que les salaires."),
+              ("IPC / IPCH", "Indice des prix à la consommation, et sa version harmonisée européenne : les thermomètres de l'inflation."),
+              ("Taux directeur", "Taux fixé par la banque centrale ; il influence tous les autres taux (crédits, épargne, obligations)."),
+              ("Hawkish / Dovish", "Banque centrale « faucon » : plutôt pour des taux hauts contre l'inflation ; « colombe » : plutôt pour des taux bas pour soutenir l'économie."),
+              ("Politique monétaire / budgétaire", "Monétaire : taux et monnaie, décidés par la banque centrale. Budgétaire : impôts et dépenses publiques, décidés par le gouvernement."),
+              ("Action", "Part de propriété d'une entreprise ; donne droit à une partie des bénéfices (dividende) et aux plus-values."),
+              ("Obligation", "Prêt à un État ou une entreprise : on touche des intérêts (coupon) et on récupère le capital à l'échéance."),
+              ("ETF / tracker", "Fonds coté en bourse qui réplique un indice (CAC 40, S&P 500) à faible coût."),
+              ("Indice boursier", "Panier d'actions qui mesure la santé d'un marché (CAC 40, S&P 500…)."),
+              ("Dividende", "Part du bénéfice versée aux actionnaires."),
+              ("PER", "Price Earning Ratio : cours ÷ bénéfice par action. Un PER élevé signifie que l'action est chère par rapport à ses profits."),
+              ("Rendement (yield)", "Gain annuel d'un placement rapporté à son prix : pour une obligation, intérêts ÷ prix."),
+              ("Coupon", "Intérêt périodique versé par une obligation."),
+              ("Notation de crédit", "Note de solvabilité d'un émetteur par les agences (de AAA, la meilleure, à D, le défaut). Plus la note est basse, plus il paie cher pour emprunter."),
+              ("Dette et déficit publics", "Le déficit est l'écart annuel entre dépenses et recettes de l'État ; la dette est l'accumulation des déficits passés."),
+              ("Balance commerciale", "Exportations moins importations de biens : excédent si positif, déficit sinon."),
+              ("Taux de change", "Prix d'une monnaie en une autre (1 € = x $). Un euro fort pénalise les exportateurs mais baisse le prix des importations."),
+              ("Dépréciation / dévaluation", "Baisse de la valeur d'une monnaie : sur le marché pour la dépréciation, décidée par l'État pour la dévaluation."),
+              ("Bull / Bear market", "Marché haussier (hausse de 20 % ou plus depuis le creux) / baissier (baisse de 20 % ou plus depuis le sommet)."),
+              ("Correction / Krach", "Correction : baisse de 10 % à 20 %. Krach : chute brutale et profonde."),
+              ("IPO", "Introduction en bourse : première cotation d'une entreprise."),
+              ("Valeur refuge", "Actif recherché en période de crise : or, franc suisse, yen, dette américaine ou allemande."),
+              ("Liquidité", "Facilité à acheter ou vendre un actif rapidement sans en bouger le prix."),
+              ("Volatilité", "Amplitude des variations de prix : forte volatilité signifie des mouvements brusques et un risque plus élevé."),
+              ("Position longue / courte", "Longue : on achète en espérant la hausse. Courte : on vend à découvert en espérant la baisse."),
+              ("Option (call / put)", "Droit, sans obligation, d'acheter (call) ou de vendre (put) un actif à un prix fixé et avant une date donnée."),
+              ("Future", "Contrat à terme : engagement d'acheter ou de vendre un actif à un prix et une date fixés à l'avance."),
+              ("Produit dérivé", "Instrument dont la valeur dépend d'un autre actif (options, futures, swaps)."),
+              ("Hedge fund", "Fonds spéculatif qui utilise levier, vente à découvert et dérivés pour viser un gain en tout type de marché."),
+              ("Sell-side / Buy-side", "Sell-side : banques qui vendent des services et des produits (sales, traders, recherche). Buy-side : investisseurs qui achètent (gérants, hedge funds)."),
+              ("Fonds souverain", "Fonds d'investissement détenu par un État, souvent financé par les matières premières (Norvège, Arabie saoudite)."),
+              ("Diversification", "Répartir ses placements sur plusieurs actifs pour réduire le risque."),
+              ("Plus-value / moins-value", "Gain / perte réalisé quand on vend un actif plus cher / moins cher qu'on l'a acheté.")]
+        GL.sort(key=lambda g: g[0].lower())
         hit = [g for g in GL if q in g[0].lower() or q in g[1].lower()]
         if not hit:
             st.info("Aucun terme trouvé.")
