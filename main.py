@@ -123,11 +123,9 @@ UNIVERSE = {
     }
 }
 
-
 @st.cache_resource
 def _last():
     return {}  # dernières séries valides : évite les trous si Yahoo refuse un ticker ponctuellement
-
 
 def _chart(t, rng="3mo"):
     """Secours : API graphique Yahoo en direct (indépendante de yfinance)."""
@@ -138,13 +136,11 @@ def _chart(t, rng="3mo"):
     sr = pd.Series(res["indicators"]["quote"][0]["close"], index=pd.to_datetime(res["timestamp"], unit="s").normalize(), dtype="float64").dropna()
     return sr[~sr.index.duplicated(keep="last")]
 
-
 def _safe_chart(t):
     try:
         return _chart(t)
     except Exception:
         return None
-
 
 @st.cache_data(ttl=240, show_spinner=False)
 def load_all_data():
@@ -176,7 +172,6 @@ def load_all_data():
         elif t in last:
             got[t] = last[t]
     return pd.DataFrame(got)
-
 
 # =====================================================================
 #  DESIGN SYSTEM
@@ -367,6 +362,19 @@ section[data-testid="stSidebar"] div[role="radiogroup"]>label:nth-child(10){marg
 .qk{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:10px 14px;border-radius:13px;background:rgba(255,255,255,.04);border:1px solid var(--bd);margin-bottom:6px;font-size:.84rem}
 .qk b{font-weight:600;color:#CBD3E6}.qk span{font-family:'JetBrains Mono',monospace;font-size:.8rem}
 .qk .up{color:var(--up)}.qk .dn{color:var(--dn)}
+
+/* --- OPTIMISATION MOBILE (TÉLÉPHONES) --- */
+@media (max-width: 768px) {
+    .hero h1 { font-size: 1.6rem !important; }
+    .hero p { font-size: 0.85rem !important; }
+    .sg { grid-template-columns: repeat(2, 1fr) !important; }
+    [class*="st-key-card_"] { padding: 12px 10px !important; }
+    .mv { font-size: 1.3rem !important; }
+    .chip { font-size: 0.7rem !important; }
+    .hl { min-height: auto !important; padding: 16px !important; }
+    .hl-t { font-size: 1.1rem !important; }
+    .ct { display: block !important; overflow-x: auto !important; white-space: nowrap !important; }
+}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -1116,7 +1124,7 @@ def render_cal():
     fig.add_vline(x=now_h, line=dict(color=DN, width=2, dash="dot"), annotation_text="Maintenant", annotation_font_color=DN)
     fig.update_layout(height=430, barmode="overlay", margin=dict(l=0, r=10, t=24, b=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                       font=dict(family="Inter", color="#CBD3E6"), xaxis=dict(range=[0, 24], tickvals=list(range(0, 25, 2)), ticktext=[f"{h:02d}h" for h in range(0, 25, 2)],
-                                                                          gridcolor="rgba(255,255,255,.06)"),
+                                                                              gridcolor="rgba(255,255,255,.06)"),
                       yaxis=dict(autorange="reversed", categoryorder="array", categoryarray=[m[0] for m in MARKETS] + ["Crypto"]))
     show(fig, key="cal_gantt")
 
