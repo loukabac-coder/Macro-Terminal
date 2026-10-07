@@ -16,45 +16,44 @@ from datetime import timedelta
 from zoneinfo import ZoneInfo
 import streamlit.components.v1 as components
 from plotly.subplots import make_subplots
+from concurrent.futures import ThreadPoolExecutor
+import calendar
 
 st.set_page_config(page_title="PRO Macro Terminal", page_icon="◆", layout="wide", initial_sidebar_state="expanded")
 
 # =====================================================================
-#  BACKEND : UNIVERSE ÉLARGI (BIAIS FRANÇAIS)
+#  BACKEND (INCHANGÉ) : UNIVERSE + load_all_data
 # =====================================================================
 UNIVERSE = {
-    "🏛️️ Taux & Banques Centrales": {
+    "🏛️ Taux & Banques Centrales": {
         "US 10Y Treasury": "^TNX",
         "US 2Y Treasury": "^IRX",
-        "Eurozone 10Y (IGOV)": "IGOV",
-        "OAT 10Y (France)": "^FR10Y=X",
-        "Japon 10Y (JGBL.L)": "JGBL.L",
-        "Gilt 10Y (UK)": "^GB10Y=X"
+        "Eurozone 10Y (Proxy IGOV)": "IGOV",
+        "Japon 10Y (Proxy JGBL)": "JGBL.L",
+        "Intl Treasuries (BWX)": "BWX"
     },
     "🌍 Indices": {
-        "CAC 40 (France)": "^FCHI",
         "S&P 500 (US)": "^GSPC",
         "Nasdaq 100 (Tech)": "^NDX",
+        "Dow Jones": "^DJI",
+        "Russell 2000 (Small Caps)": "^RUT",
         "Euro Stoxx 50": "^STOXX50E",
+        "CAC 40 (France)": "^FCHI",
         "DAX 40 (Allemagne)": "^GDAXI",
-        "SMI (Suisse)": "^SSMI",
         "FTSE 100 (UK)": "^FTSE",
+        "SMI (Suisse)": "^SSMI",
+        "Euronext 100": "^N100",
+        "Stoxx Europe 600": "^STOXX",
+        "CAC 40 ETF (Amundi)": "CAC.PA",
+        "AEX (Pays-Bas)": "^AEX",
+        "IBEX 35 (Espagne)": "^IBEX",
+        "FTSE MIB (Italie)": "FTSEMIB.MI",
         "Nikkei 225 (Japon)": "^N225",
         "Hang Seng (Hong Kong)": "^HSI",
+        "CSI 300 (Proxy ASHR)": "ASHR",
         "Nifty 50 (Inde)": "^NSEI",
-        "MSCI World (URTH)": "URTH"
-    },
-    "🇫🇷 Fleurons Français": {
-        "LVMH (Luxe)": "MC.PA",
-        "L'Oréal (Cosmétique)": "OR.PA",
-        "Hermès (Luxe)": "RMS.PA",
-        "TotalEnergies (Énergie)": "TTE.PA",
-        "Sanofi (Santé)": "SAN.PA",
-        "Schneider Elec. (Industrie)": "SU.PA",
-        "Airbus (Aérospatial)": "AIR.PA",
-        "BNP Paribas (Banque)": "BNP.PA",
-        "AXA (Assurance)": "CS.PA",
-        "EssilorLuxottica": "EL.PA"
+        "MSCI World (URTH)": "URTH",
+        "MSCI Emerging (EEM)": "EEM"
     },
     "💱 Devises (Forex)": {
         "DXY (Dollar Index)": "DX-Y.NYB",
@@ -63,9 +62,13 @@ UNIVERSE = {
         "USD/JPY (Ninja)": "USDJPY=X",
         "USD/CHF (Refuge)": "USDCHF=X",
         "AUD/USD (Aussie)": "AUDUSD=X",
+        "USD/CAD (Loonie)": "USDCAD=X",
         "USD/CNY (Yuan Onshore)": "USDCNY=X",
         "EUR/GBP": "EURGBP=X",
-        "EUR/JPY": "EURJPY=X"
+        "EUR/CHF": "EURCHF=X",
+        "EUR/JPY": "EURJPY=X",
+        "EUR/CNY": "EURCNY=X",
+        "EUR/AUD": "EURAUD=X"
     },
     "🛢️ Matières Premières": {
         "Brent Crude (Europe)": "BZ=F",
@@ -74,9 +77,14 @@ UNIVERSE = {
         "Argent (Silver)": "SI=F",
         "Cuivre (Dr. Copper)": "HG=F",
         "Gaz Naturel (US)": "NG=F",
-        "Uranium (Proxy URA)": "URA",
         "Blé (Wheat)": "ZW=F",
-        "Cacao (Cocoa)": "CC=F"
+        "Maïs (Corn)": "ZC=F",
+        "Soja (Soybeans)": "ZS=F",
+        "Cacao (Côte d'Ivoire)": "CC=F",
+        "Café (Arabica)": "KC=F",
+        "Sucre": "SB=F",
+        "Platine": "PL=F",
+        "Palladium": "PA=F"
     },
     "🚀 Leaders & Mega-Caps": {
         "Apple": "AAPL",
@@ -87,15 +95,23 @@ UNIVERSE = {
         "Meta": "META",
         "TSMC": "TSM",
         "Novo Nordisk": "NVO",
+        "LVMH (Luxe)": "MC.PA",
         "ASML (Semi-conducteurs)": "ASML.AS"
+    },
+    "🇫🇷 Actions Françaises (CAC 40)": {
+        "Hermès": "RMS.PA", "TotalEnergies": "TTE.PA", "Sanofi": "SAN.PA", "L'Oréal": "OR.PA",
+        "Schneider Electric": "SU.PA", "Airbus": "AIR.PA", "Safran": "SAF.PA", "BNP Paribas": "BNP.PA",
+        "AXA": "CS.PA", "Air Liquide": "AI.PA", "EssilorLuxottica": "EL.PA", "Vinci": "DG.PA",
+        "Kering": "KER.PA", "Dassault Systèmes": "DSY.PA", "Danone": "BN.PA", "Pernod Ricard": "RI.PA",
+        "Société Générale": "GLE.PA", "Crédit Agricole": "ACA.PA", "Thales": "HO.PA", "Stellantis": "STLAP.PA",
+        "Capgemini": "CAP.PA", "Orange": "ORA.PA", "Engie": "ENGI.PA", "Michelin": "ML.PA"
     },
     "🪙 Crypto-Actifs": {
         "Bitcoin (BTC)": "BTC-USD",
         "Ethereum (ETH)": "ETH-USD",
         "Solana (SOL)": "SOL-USD",
         "Binance Coin (BNB)": "BNB-USD",
-        "Ripple (XRP)": "XRP-USD",
-        "Cardano (ADA)": "ADA-USD"
+        "Ripple (XRP)": "XRP-USD"
     },
     "🚨 Volatilité & Crédit": {
         "VIX (Indice de la Peur)": "^VIX",
@@ -104,6 +120,7 @@ UNIVERSE = {
         "Investment Grade (Dette)": "LQD"
     }
 }
+
 
 @st.cache_data(ttl=300)
 def load_all_data():
@@ -160,13 +177,6 @@ section[data-testid="stSidebar"] div[role="radiogroup"]>label:has(input:checked)
 .pill{padding:7px 14px;border-radius:99px;font-size:.78rem;font-weight:600;background:rgba(255,255,255,.05);border:1px solid var(--bd);color:#CBD3E6;font-family:'JetBrains Mono',monospace}
 .pill.up{color:var(--up);border-color:rgba(52,211,153,.35);background:rgba(52,211,153,.08)}
 .pill.dn{color:var(--dn);border-color:rgba(251,113,133,.35);background:rgba(251,113,133,.08)}
-
-/* Central Banks Panel */
-.cb-panel {display:flex; gap:15px; margin-bottom:25px; flex-wrap:wrap;}
-.cb-card {flex:1; min-width:180px; background:linear-gradient(150deg,rgba(255,255,255,.07),rgba(255,255,255,.015)); border:1px solid var(--bd); border-radius:18px; padding:16px; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,.35);}
-.cb-name {color:var(--mut); font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;}
-.cb-rate {color:var(--a2); font-size:1.8rem; font-weight:700; font-family:'JetBrains Mono',monospace; margin-bottom:4px;}
-.cb-desc {color:#6B7389; font-size:0.75rem;}
 
 /* Metric cards (st.container key=card_*) */
 [class*="st-key-card_"]{background:linear-gradient(160deg,rgba(255,255,255,.065),rgba(255,255,255,.015));border:1px solid var(--bd);border-radius:18px;padding:16px 16px 4px;backdrop-filter:blur(14px);box-shadow:0 10px 30px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.07);transition:transform .3s,border-color .3s,box-shadow .3s;margin-bottom:8px;gap:0!important}
@@ -236,17 +246,16 @@ div[data-baseweb="tab-border"]{background:var(--bd)!important}
 .mt .ex{position:absolute;right:0;top:0;opacity:.4;transition:.25s}
 [class*="st-key-card_"]:hover .ex{opacity:1;color:var(--a2)}
 
-/* Top 5 compact & traduit */
+/* Top 5 compact */
 .hl{display:block;position:relative;overflow:hidden;text-decoration:none!important;padding:24px 26px;border-radius:20px;min-height:276px;background:linear-gradient(150deg,rgba(255,255,255,.08),rgba(255,255,255,.015));border:1px solid var(--bd);box-shadow:0 12px 34px rgba(0,0,0,.4);transition:.3s}
 .hl::before{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:linear-gradient(90deg,var(--c),transparent)}
 .hl:hover{transform:translateY(-3px);border-color:var(--c);box-shadow:0 0 30px -6px var(--c)}
-.hl-t{color:#fff;font-weight:800;font-size:1.2rem;line-height:1.3;margin:6px 0 6px}
-.hl-s{color:var(--a2);font-size:0.95rem;line-height:1.4;margin-bottom:12px;font-style:italic;}
-.sl{display:flex;gap:14px;align-items:center;text-decoration:none!important;padding:12px 16px;border-radius:14px;margin-bottom:10px;min-height:75px;background:rgba(255,255,255,.04);border:1px solid var(--bd);border-left:3px solid var(--c);transition:.25s}
+.hl-t{color:#fff;font-weight:800;font-size:1.4rem;line-height:1.3;margin:6px 0 12px}
+.hl-s{color:#AEB6CA;font-size:.9rem;line-height:1.55}
+.sl{display:flex;gap:14px;align-items:center;text-decoration:none!important;padding:10px 14px;border-radius:14px;margin-bottom:8px;min-height:62px;background:rgba(255,255,255,.04);border:1px solid var(--bd);border-left:3px solid var(--c);transition:.25s}
 .sl:hover{background:rgba(255,255,255,.08);transform:translateX(4px)}
 .sl .rank{font-size:1.1rem}
-.sl-t{color:#F1F5F9;font-weight:600;font-size:0.95rem;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
-.sl-fr{color:var(--mut);font-size:0.85rem;margin-top:2px;font-style:italic;}
+.sl-t{color:#F1F5F9;font-weight:600;font-size:.88rem;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .sl-m{display:flex;gap:8px;align-items:center;margin-top:4px;font-size:.7rem;color:#6B7389}
 
 /* Vue détaillée */
@@ -266,6 +275,33 @@ div[data-baseweb="tab-border"]{background:var(--bd)!important}
 .ct td:first-child{border-left:1px solid var(--bd);border-radius:12px 0 0 12px;font-weight:700}
 .ct td:last-child{border-right:1px solid var(--bd);border-radius:0 12px 12px 0}
 .ct .mono{font-family:'JetBrains Mono',monospace;font-size:.82rem;color:#CBD3E6}
+
+/* Nav latérale v2 */
+section[data-testid="stSidebar"] div[role="radiogroup"]{gap:3px}
+section[data-testid="stSidebar"] div[role="radiogroup"]>label{position:relative;padding:6px 10px;border-radius:14px}
+section[data-testid="stSidebar"] div[role="radiogroup"]>label p::before{content:"";flex:none;width:34px;height:34px;margin-right:12px;border-radius:11px;background:var(--ic) center/17px no-repeat,rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);transition:.25s}
+section[data-testid="stSidebar"] div[role="radiogroup"]>label:hover p::before{background:var(--ic) center/17px no-repeat,rgba(99,102,241,.25)}
+section[data-testid="stSidebar"] div[role="radiogroup"]>label:has(input:checked){background:linear-gradient(90deg,rgba(99,102,241,.18),transparent);border-color:rgba(129,140,248,.25);box-shadow:none}
+section[data-testid="stSidebar"] div[role="radiogroup"]>label:has(input:checked) p::before{background:var(--ic) center/17px no-repeat,linear-gradient(135deg,#6366F1,#22D3EE);border-color:transparent;box-shadow:0 0 18px rgba(99,102,241,.6)}
+section[data-testid="stSidebar"] div[role="radiogroup"]>label:has(input:checked)::after{content:"";position:absolute;left:-16px;top:24%;height:52%;width:4px;border-radius:4px;background:linear-gradient(var(--a1),var(--a2));box-shadow:0 0 12px var(--a2)}
+section[data-testid="stSidebar"] div[role="radiogroup"]>label:nth-child(10){margin-top:16px}
+section[data-testid="stSidebar"] div[role="radiogroup"]>label:nth-child(10)::before{content:"";position:absolute;left:10px;right:10px;top:-9px;height:1px;background:var(--bd)}
+
+/* Actualités v3 : panneau compact */
+.tp{border-radius:20px;overflow:hidden;background:linear-gradient(160deg,rgba(255,255,255,.06),rgba(255,255,255,.015));border:1px solid var(--bd);box-shadow:0 12px 34px rgba(0,0,0,.4);margin-bottom:10px}
+.tr{display:grid;grid-template-columns:42px 1fr auto;gap:14px;align-items:center;padding:13px 18px;text-decoration:none!important;border-bottom:1px solid rgba(255,255,255,.06);border-left:3px solid var(--c);transition:.25s}
+.tr:last-child{border-bottom:0}.tr:hover{background:rgba(255,255,255,.05)}
+.tr.f{background:linear-gradient(90deg,color-mix(in srgb,var(--c) 15%,transparent),transparent 65%)}
+.rk2{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-family:'JetBrains Mono',monospace;font-weight:700;color:#fff;background:linear-gradient(135deg,var(--c),color-mix(in srgb,var(--c) 40%,#000))}
+.en{color:#fff;font-weight:700;font-size:.95rem;line-height:1.3}.tr.f .en{font-size:1.1rem}
+.fr{color:#9AA4BC;font-size:.84rem;line-height:1.35;margin-top:3px;font-style:italic}
+.sm{color:#7F89A1;font-size:.8rem;margin-top:6px;line-height:1.45}
+.mt2{display:flex;flex-direction:column;align-items:flex-end;gap:6px;min-width:130px}
+.bars{display:flex;gap:3px}.bars i{width:14px;height:5px;border-radius:3px;background:rgba(255,255,255,.12)}.bars i.on{background:var(--c)}
+.tm{font-size:.7rem;color:#6B7389;font-family:'JetBrains Mono',monospace}
+.fl{display:grid;grid-template-columns:96px 1fr auto;gap:12px;align-items:center;padding:10px 16px;text-decoration:none!important;border-bottom:1px solid rgba(255,255,255,.05);transition:.2s}
+.fl:last-child{border-bottom:0}.fl:hover{background:rgba(99,102,241,.1)}
+@media(max-width:760px){.tr{grid-template-columns:36px 1fr}.mt2{flex-direction:row;align-items:center;grid-column:2}.fl{grid-template-columns:1fr}}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -273,10 +309,12 @@ st.markdown(CSS, unsafe_allow_html=True)
 # --- Icônes SVG (style Lucide) pour la navigation, dans l'ordre des options ---
 ICONS = [
     '<line x1="3" x2="21" y1="22" y2="22"/><line x1="6" x2="6" y1="18" y2="11"/><line x1="10" x2="10" y1="18" y2="11"/><line x1="14" x2="14" y1="18" y2="11"/><line x1="18" x2="18" y1="18" y2="11"/><polygon points="12 2 20 7 4 7"/>',
+    '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
     '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
-    '<circle cx="12" cy="12" r="10"/><path d="M12 2v20"/><path d="M2 12h20"/>',
+    '<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>',
     '<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/>',
     '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+    '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
     '<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/>',
     '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
     '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
@@ -284,16 +322,15 @@ ICONS = [
     '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
 ]
 
+
 def icon_css():
     out = "<style>"
     for i, paths in enumerate(ICONS, 1):
-        svg = ("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' "
-               "stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>" + paths + "</svg>")
-        uri = "data:image/svg+xml," + quote(svg)
-        out += (f'section[data-testid="stSidebar"] div[role="radiogroup"]>label:nth-child({i}) p::before'
-                f'{{content:"";display:inline-block;width:18px;height:18px;margin-right:12px;background:currentColor;'
-                f'-webkit-mask:url("{uri}") center/contain no-repeat;mask:url("{uri}") center/contain no-repeat}}')
+        svg = ("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' "
+               "stroke-linecap='round' stroke-linejoin='round'>" + paths + "</svg>")
+        out += (f'section[data-testid="stSidebar"] div[role="radiogroup"]>label:nth-child({i}){{--ic:url("data:image/svg+xml,{quote(svg)}")}}')
     return out + "</style>"
+
 
 st.markdown(icon_css(), unsafe_allow_html=True)
 
@@ -304,10 +341,12 @@ st.markdown(icon_css(), unsafe_allow_html=True)
 def clean_label(k):
     return re.sub(r"^[^\w]+", "", k).strip()
 
+
 def hex_rgba(h, a):
     h = h.lstrip('#')
     r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
     return f"rgba({r},{g},{b},{a})"
+
 
 def show(fig, key=None, static=False):
     cfg = {'displayModeBar': False, 'staticPlot': static}
@@ -316,13 +355,16 @@ def show(fig, key=None, static=False):
     except TypeError:
         st.plotly_chart(fig, use_container_width=True, config=cfg, key=key)
 
+
 def hero(eyebrow, title, sub, pills=""):
     st.markdown(f'<div class="hero"><div><div class="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{sub}</p></div>'
                 f'<div class="pills">{pills}</div></div>', unsafe_allow_html=True)
 
+
 def sec(title, sub, right=""):
     st.markdown(f'<div class="sec"><div><h2>{title}</h2><span>{sub}</span></div><div>{right}</div></div>',
                 unsafe_allow_html=True)
+
 
 def mini_chart(series, color):
     fig = go.Figure()
@@ -344,6 +386,7 @@ def mini_chart(series, color):
         hovermode='x unified', hoverlabel=dict(bgcolor="#11142A", font=dict(family="Inter", color="#fff", size=12), bordercolor=color))
     return fig
 
+
 def gauge(v, title, color=A1, rng=(0, 100), suffix="%", height=215):
     fig = go.Figure(go.Indicator(
         mode="gauge+number", value=v,
@@ -354,6 +397,60 @@ def gauge(v, title, color=A1, rng=(0, 100), suffix="%", height=215):
     fig.update_layout(height=height, margin=dict(l=24, r=24, t=44, b=0),
                       paper_bgcolor='rgba(0,0,0,0)', font=dict(family="Inter"))
     return fig
+
+
+TIPS = {
+    "Apple": "Hardware & services · iPhone, App Store", "Microsoft": "Cloud Azure, logiciels, IA (OpenAI)",
+    "NVIDIA": "GPU et accélérateurs pour l'IA", "Alphabet": "Maison mère de Google · publicité & cloud",
+    "Amazon": "E-commerce et AWS (cloud)", "Saudi Aramco": "Compagnie pétrolière nationale saoudienne",
+    "Meta": "Facebook, Instagram, WhatsApp", "Berkshire Hathaway": "Holding de Warren Buffett",
+    "TSMC": "Taiwan Semiconductor · fondeur n°1 mondial", "Eli Lilly": "Pharma · diabète / obésité",
+    "Broadcom": "Semi-conducteurs et logiciels d'infrastructure", "Novo Nordisk": "Santé · diabète et obésité (GLP-1)",
+    "ASML": "Monopole des machines de lithographie EUV", "SAP": "Logiciels de gestion d'entreprise (ERP)",
+    "LVMH": "N°1 mondial du luxe · Louis Vuitton, Dior, Moët Hennessy", "Hermès": "Luxe · maroquinerie (Birkin), très haute marge",
+    "Kering": "Luxe · Gucci, Saint Laurent", "TotalEnergies": "Major pétrole, gaz & électricité bas carbone",
+    "Engie": "Électricité, gaz et renouvelables", "Sanofi": "Pharma · vaccins, dermatologie (Dupixent)",
+    "EssilorLuxottica": "Verres et lunettes (Ray-Ban, Oakley)", "Airbus": "Constructeur d'avions · duopole avec Boeing",
+    "Safran": "Moteurs d'avions (CFM) et équipements", "Thales": "Défense, aéronautique, cybersécurité",
+    "Schneider Electric": "Gestion de l'énergie et automatisation (data centers)", "Vinci": "Concessions (autoroutes, aéroports) et BTP",
+    "BNP Paribas": "1re banque de la zone euro · BNP Paribas CIB", "AXA": "Assurance et gestion d'actifs",
+    "Société Générale": "Banque · fort en dérivés actions", "Crédit Agricole": "Banque mutualiste · Crédit Agricole CIB",
+    "L'Oréal": "N°1 mondial de la beauté", "Danone": "Produits laitiers et nutrition", "Pernod Ricard": "Spiritueux (Ricard, Absolut, Jameson)",
+    "Stellantis": "Auto · Peugeot, Citroën, Fiat, Jeep", "Michelin": "Pneumatiques",
+}
+
+
+def table(heads, rows):
+    h = "".join(f"<th>{x}</th>" for x in heads)
+    b = "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows)
+    return f'<table class="ct"><tr>{h}</tr>{b}</table>'
+
+
+def ranks(items):
+    out = ""
+    for i, it in enumerate(items):
+        label, extra = it if isinstance(it, tuple) else (it, "")
+        m = ["g", "s", "b"][i] if i < 3 else ""
+        out += f'<div class="rk"><span class="n {m}">{i + 1}</span><span>{label}</span><em>{extra}</em></div>'
+    return out
+
+
+def chips(names):
+    return "".join(f'<span class="co tip" data-tip="{html.escape(TIPS.get(n, n))}">{n}</span>' for n in names)
+
+
+def kc(title, big="", body="", color="#A5B4FC"):
+    return (f'<div class="kc" style="--c:{color}"><h4>{title}</h4>' + (f'<div class="big">{big}</div>' if big else "") + body + '</div>')
+
+
+# ---- TAUX DIRECTEURS : À METTRE À JOUR APRÈS CHAQUE RÉUNION (saisie manuelle) ----
+CB_DATE = "06/10/2026"
+CB = [  # (banque, zone, affichage, valeur médiane, nom du taux, dernier mouvement, prochaine réunion, couleur)
+    ("Fed", "États-Unis", "3,75 – 4,00 %", 3.875, "Fed funds · fourchette cible", "Hausse de +25 pb le 16/09/26 (vote 12-0)", "Prochaine : 27-28 oct.", "#6366F1"),
+    ("BCE", "Zone euro", "2,50 %", 2.50, "Taux de la facilité de dépôt", "Hausse de +25 pb le 10/09/26 · refi 2,65 % · prêt marginal 2,90 %", "Prochaine : 29 oct.", "#22D3EE"),
+    ("BoJ", "Japon", "1,25 %", 1.25, "Taux au jour le jour", "Hausse de +25 pb le 18/09/26 (7-2) · plus haut depuis 1995", "Prochaine : 29-30 oct.", "#FB7185"),
+    ("BoE", "Royaume-Uni", "3,75 %", 3.75, "Bank Rate", "Statu quo le 17/09/26 (6-3, trois voix pour +25 pb)", "Prochaine : 5 nov.", "#34D399"),
+]
 
 
 # =====================================================================
@@ -372,6 +469,7 @@ MARKETS = [  # (ville, bourse, fuseau, sessions locales)
 ]
 STRIP = ["Sydney", "Tokyo", "Hong Kong", "Londres", "Paris", "New York"]
 PARIS = ZoneInfo("Europe/Paris")
+
 
 def market_strip():
     cfg = [{"n": n, "x": x, "tz": tz, "s": ss} for n, x, tz, ss in MARKETS if n in STRIP]
@@ -394,7 +492,10 @@ if(wk){const ss=m.s.map(a=>[mn(a[0]),mn(a[1])]);for(let k=0;k<ss.length;k++){if(
 if(cur<ss[k][0]){st=k>0?'lunch':'closed';tx=(k>0?'Pause':'Fermé')+' · ouvre dans '+fm(ss[k][0]-cur);break}}}
 const e=document.getElementById('m'+i);e.className='m '+st;e.querySelector('.t').textContent=g('hour').replace('24','00')+':'+g('minute')+':'+g('second');e.querySelector('.s span').textContent=tx})}
 tick();setInterval(tick,1000)</script>""".replace("__CFG__", json.dumps(cfg))
-    components.html(page, height=108)
+    try:
+        st.iframe(page, height=108)  # Streamlit récent : components.html est déprécié
+    except Exception:
+        components.html(page, height=108)
 
 
 # =====================================================================
@@ -406,6 +507,7 @@ def load_detail(ticker, period):
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     return df.dropna(subset=["Close"])
+
 
 @st.dialog("Analyse détaillée", width="large")
 def detail_dialog(name, ticker, cat):
@@ -477,9 +579,10 @@ st.sidebar.markdown(
     '<div class="brand-s">Global Markets</div></div></div>'
     f'<div class="live"><i></i>LIVE · {datetime.now(timezone.utc).strftime("%H:%M UTC")}</div>'
     '<div class="navlab">Navigation</div>', unsafe_allow_html=True)
-options = list(UNIVERSE.keys()) + ["🕐 Calendrier des Marchés", "📰 Actualités Macro (FR)", "📚 Base de Connaissances"]
+_k = list(UNIVERSE.keys())
+options = _k[:1] + ["🏦 Banques Centrales"] + _k[1:] + ["🕐 Calendrier des Marchés", "📰 Actualités Macro (FR)", "📚 Base de Connaissances"]
 category = st.sidebar.radio("NAVIGATION", options, format_func=clean_label, label_visibility="collapsed")
-st.sidebar.markdown('<div style="margin-top:30px;font-size:.7rem;color:#4B5367;line-height:1.5">Données : Yahoo Finance · cache 5 min<br>Informations à but pédagogique.</div>',
+st.sidebar.markdown('<div style="margin-top:30px;font-size:.7rem;color:#4B5367;line-height:1.5">Données : Yahoo Finance · cache 5 min<br>Informations à but pédagogique, pas un conseil en investissement.</div>',
                     unsafe_allow_html=True)
 
 # =====================================================================
@@ -488,18 +591,6 @@ st.sidebar.markdown('<div style="margin-top:30px;font-size:.7rem;color:#4B5367;l
 market_strip()
 
 if category in UNIVERSE:
-    
-    # --- PANNEAU DES BANQUES CENTRALES ---
-    if category == "🏛️ Taux & Banques Centrales":
-        st.markdown("""
-        <div class="cb-panel">
-            <div class="cb-card"><div class="cb-name">FED (États-Unis)</div><div class="cb-rate">4.75% - 5.00%</div><div class="cb-desc">Fed Funds Rate</div></div>
-            <div class="cb-card"><div class="cb-name">BCE (Zone Euro)</div><div class="cb-rate">3.50%</div><div class="cb-desc">Taux de dépôt</div></div>
-            <div class="cb-card"><div class="cb-name">BoE (Royaume-Uni)</div><div class="cb-rate">5.00%</div><div class="cb-desc">Bank Rate</div></div>
-            <div class="cb-card"><div class="cb-name">BoJ (Japon)</div><div class="cb-rate">0.25%</div><div class="cb-desc">Policy Rate</div></div>
-        </div>
-        """, unsafe_allow_html=True)
-
     with st.spinner("Synchronisation avec les marchés..."):
         df_close = load_all_data()
 
@@ -552,8 +643,45 @@ if category in UNIVERSE:
                 st.warning(f"{name} : Hors ligne")
 
 # =====================================================================
-#  PAGE : CALENDRIER DES MARCHÉS
+#  PAGE : ACTUALITÉS
 # =====================================================================
+elif category == "🏦 Banques Centrales":
+    hero("Politique monétaire", "Banques Centrales", f"Taux directeurs · saisie manuelle au {CB_DATE}, à vérifier sur les sites officiels",
+         '<span class="pill">Fed · BCE · BoJ · BoE</span>')
+    for col, (n_, zone, rate, val, lab, move, nxt, c_) in zip(st.columns(4), CB):
+        with col:
+            st.markdown(kc(f"{n_} · {zone}", rate, f"<p><b>{lab}</b></p><p>{move}</p><span class='pill'>{nxt}</span>", c_), unsafe_allow_html=True)
+    c1, c2 = st.columns([3, 2])
+    with c1:
+        sec("Niveau des taux directeurs", "En %, milieu de fourchette pour la Fed")
+        fig = go.Figure(go.Bar(y=[x[0] for x in CB][::-1], x=[x[3] for x in CB][::-1], orientation="h", text=[x[2] for x in CB][::-1],
+                               textposition="outside", cliponaxis=False, marker=dict(color=[x[7] for x in CB][::-1])))
+        fig.update_layout(height=260, margin=dict(l=0, r=90, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                          xaxis=dict(visible=False, range=[0, 5]), font=dict(family="Inter", color="#fff"))
+        show(fig, key="cb_bar")
+    with c2:
+        sec("Écarts de taux", "En points de base (pb)")
+        d_ = {x[0]: x[3] for x in CB}
+        tl = [("Fed − BCE", d_["Fed"] - d_["BCE"]), ("Fed − BoJ", d_["Fed"] - d_["BoJ"]), ("BCE − BoJ", d_["BCE"] - d_["BoJ"]), ("BoE − BCE", d_["BoE"] - d_["BCE"])]
+        st.markdown('<div class="sg" style="grid-template-columns:repeat(2,1fr)">' + "".join(
+            f'<div class="sgt"><span>{a_}</span><b>{v * 100:+.0f} pb</b></div>' for a_, v in tl) + '</div>', unsafe_allow_html=True)
+        st.caption("Un écart élevé alimente le carry trade (emprunt en yen ou en euro, placement en dollar).")
+    sec("Prochaines échéances", "Dates prévues · à confirmer sur le calendrier officiel de chaque banque")
+    st.markdown(table(["Date", "Banque", "Événement"], [
+        ["27-28 oct.", "Fed", "Réunion du FOMC"], ["29 oct.", "BCE", "Décision de politique monétaire (14h15, heure de Paris)"],
+        ["29-30 oct.", "BoJ", "Réunion de politique monétaire"], ["5 nov.", "BoE", "Décision du MPC + Monetary Policy Report"],
+        ["17 déc.", "BCE · BoE", "Dernières décisions de l'année"]]), unsafe_allow_html=True)
+    with st.expander("Contexte macro (automne 2026)", expanded=True):
+        st.markdown("- **Choc énergétique** lié au conflit au Moyen-Orient : le pétrole a fortement monté et nourrit l'inflation partout.\n"
+                    "- **Fed** : présidée par Kevin Warsh, elle est passée d'un débat « statu quo ou hausse » à une hausse en septembre.\n"
+                    "- **BCE** : inflation attendue à 3,0 % en 2026, 2,5 % en 2027 et 2,1 % en 2028 selon ses projections de septembre.\n"
+                    "- **BoJ** : poursuite de la normalisation, l'inflation devant dépasser 2 % au second semestre de l'exercice 2026.\n"
+                    "- **BoE** : inflation à 3,1 % en août, trois membres du MPC voulaient déjà relever le taux.")
+    with st.expander("Et la France ? Banque de France et taux"):
+        st.markdown("- Les **taux directeurs en France sont ceux de la BCE** : la Banque de France fait partie de l'Eurosystème et son gouverneur siège au Conseil des gouverneurs.\n"
+                    "- La Banque de France publie les **taux d'usure** (plafond légal des crédits) et son gouverneur donne un avis sur le **taux du Livret A**, fixé par l'État.\n"
+                    "- Le coût de la dette française se lit dans le **taux de l'OAT 10 ans** et son écart avec le Bund allemand (voir le glossaire).")
+
 elif category == "🕐 Calendrier des Marchés":
     now = datetime.now(PARIS)
     origin = datetime.combine(now.date(), datetime.min.time(), PARIS)
@@ -602,7 +730,7 @@ elif category == "🕐 Calendrier des Marchés":
     fig.add_vline(x=now_h, line=dict(color=DN, width=2, dash="dot"), annotation_text="Maintenant", annotation_font_color=DN)
     fig.update_layout(height=430, barmode="overlay", margin=dict(l=0, r=10, t=24, b=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                       font=dict(family="Inter", color="#CBD3E6"), xaxis=dict(range=[0, 24], tickvals=list(range(0, 25, 2)), ticktext=[f"{h:02d}h" for h in range(0, 25, 2)],
-                                                                             gridcolor="rgba(255,255,255,.06)"),
+                                                                          gridcolor="rgba(255,255,255,.06)"),
                       yaxis=dict(autorange="reversed", categoryorder="array", categoryarray=[m[0] for m in MARKETS] + ["Crypto"]))
     show(fig, key="cal_gantt")
 
@@ -615,272 +743,343 @@ elif category == "🕐 Calendrier des Marchés":
                   f'<td>Lun–Ven</td><td><span class="pill {cls}">{stt}</span></td></tr>')
     st.markdown('<table class="ct"><tr><th>Place</th><th>Bourse</th><th>Heures locales</th><th>Heure de Paris</th><th>Jours</th><th>Statut</th></tr>' + rows_ + '</table>',
                 unsafe_allow_html=True)
+    with st.expander("À savoir"):
+        st.markdown("- **Hong Kong** : la pause déjeuner (12h–13h) pourrait être supprimée : HKEX étudie un allongement des horaires.\n"
+                    "- **Tokyo** : clôture à 15h30 (horaires étendus depuis fin 2024).\n"
+                    "- **Pré-ouvertures / enchères de clôture** non représentées ici.\n"
+                    "- Vérifiez toujours le calendrier officiel de la bourse pour les jours fériés et demi-journées.")
 
-# =====================================================================
-#  PAGE : ACTUALITÉS (TRADUCTION RAPIDE DU TOP 5)
-# =====================================================================
 elif category == "📰 Actualités Macro (FR)":
     FEED = "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664"
     AGGREGATOR = "https://www.tradingview.com/news/"
     TAGS = {
-        "Banques centrales": ("#818CF8", 5, ["fed", "federal reserve", "ecb", "boj", "powell", "lagarde", "rate cut", "rate hike", "interest rate", "central bank", "fomc", "bank of england"]),
-        "Inflation & Emploi": ("#FBBF24", 4, ["inflation", "cpi", "pce", "jobs", "payroll", "unemployment", "gdp", "recession", "layoffs"]),
-        "Géopolitique": ("#FB7185", 4, ["war", "sanction", "iran", "russia", "ukraine", "china", "israel", "tariff", "trade war", "middle east", "taiwan", "election", "trump"]),
+        "Banques centrales": ("#818CF8", 5, ["fed", "federal reserve", "ecb", "boj", "bank of japan", "bank of england", "powell", "warsh", "lagarde", "rate cut", "rate hike", "interest rate", "central bank", "fomc"]),
+        "Inflation & Emploi": ("#FBBF24", 4, ["inflation", "cpi", "pce", "jobs", "payroll", "unemployment", "gdp", "recession", "layoffs", "consumer prices"]),
+        "Géopolitique": ("#FB7185", 4, ["war", "sanction", "iran", "russia", "ukraine", "china", "israel", "tariff", "trade war", "middle east", "taiwan", "election", "trump", "ceasefire"]),
         "Énergie": ("#FB923C", 3, ["oil", "crude", "natural gas", "opec", "energy", "brent"]),
-        "Marchés": ("#22D3EE", 2, ["stocks", "s&p", "nasdaq", "dow", "yields", "treasury", "dollar", "bond", "bitcoin", "earnings"]),
+        "Europe & France": ("#60A5FA", 3, ["france", "french", "macron", "eurozone", "euro zone", "european", "europe", "germany", "paris", "cac"]),
+        "Marchés": ("#22D3EE", 2, ["stocks", "s&p", "nasdaq", "dow", "yields", "treasury", "dollar", "bond", "bitcoin", "earnings", "wall street"]),
     }
+    HOT = ["plunge", "surge", "soar", "crash", "record", "emergency", "shock", "collapse", "spike", "tumble", "warns", "default"]
 
     @st.cache_data(ttl=600, show_spinner=False)
     def fetch_news():
-        r = requests.get(FEED, headers={'User-Agent': 'Mozilla/5.0'}, timeout=8)
-        feed = feedparser.parse(r.content)
+        r = requests.get(FEED, headers={'User-Agent': 'Mozilla/5.0'}, timeout=6)
         out = []
-        for e in feed.entries[:30]:
-            ts = time.mktime(e.published_parsed) if getattr(e, "published_parsed", None) else 0
+        for e in feedparser.parse(r.content).entries[:40]:
+            ts = calendar.timegm(e.published_parsed) if getattr(e, "published_parsed", None) else 0
             out.append({"title": e.title, "link": e.link, "ts": ts,
-                        "summary": re.sub(r"<[^>]+>", "", getattr(e, "summary", ""))})
+                        "summary": re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", getattr(e, "summary", ""))).strip()})
         return out
 
-    def tr(text):
+    def _tr(texts):
+        g = GoogleTranslator(source="en", target="fr")
+        out = (g.translate("\n".join(texts)) or "").split("\n")
+        return out if len(out) == len(texts) else g.translate_batch(texts)
+
+    @st.cache_data(ttl=86400, show_spinner=False)
+    def fr_batch(texts):  # 1 seule requête, limitée à 18 s ; une erreur n'est pas mise en cache
+        ex = ThreadPoolExecutor(1)
         try:
-            return GoogleTranslator(source='auto', target='fr').translate(text)
-        except Exception:
-            return text
+            return tuple(ex.submit(_tr, list(texts)).result(timeout=18))
+        finally:
+            ex.shutdown(wait=False)
 
     def score(n):
         txt = (n["title"] + " " + n["summary"]).lower()
-        total, best, best_w = 0, "Marchés", 0
+        total, best, bw = 0, "Marchés", 0
         for tag, (_, w, kws) in TAGS.items():
-            hits = sum(1 for k in kws if re.search(r"\b" + re.escape(k), txt))
-            if hits:
-                total += w * min(hits, 2)
-                if w * hits > best_w:
-                    best, best_w = tag, w * hits
-        return total, best
+            v = w * min(sum(1 for k in kws if re.search(r"\b" + re.escape(k), txt)), 2)
+            total += v
+            if v > bw:
+                best, bw = tag, v
+        total += sum(1 for k in HOT if k in txt)
+        age = (time.time() - n["ts"]) / 3600 if n["ts"] else 99
+        return total + (2 if age < 6 else 1 if age < 24 else 0), best
 
     def fmt(ts):
-        return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%d/%m · %H:%M UTC") if ts else "—"
+        return datetime.fromtimestamp(ts, tz=PARIS).strftime("%d/%m · %H:%M") if ts else "—"
 
-    hero("Intelligence de marché", "Actualités Macro",
-         "Sélection automatique des événements à plus fort impact · traduction française",
-         f'<span class="pill">Source · CNBC</span>')
-
+    hero("Intelligence de marché", "Actualités Macro", "Titres d'origine (CNBC) classés par impact estimé, avec traduction française",
+         '<span class="pill">Source · CNBC</span>')
     try:
-        with st.spinner("Chargement rapide des actualités..."):
-            news = []
-            for n in fetch_news():
-                n = dict(n)
-                n["score"], n["tag"] = score(n)
-                news.append(n)
-            
-            # On trie et on prend le Top 5 le plus pertinent
-            top5 = sorted(news, key=lambda n: (n["score"], n["ts"]), reverse=True)[:5]
-            top_links = {n["link"] for n in top5}
-            flux = sorted([n for n in news if n["link"] not in top_links], key=lambda n: n["ts"], reverse=True)[:15]
-            
-            # On traduit UNIQUEMENT le Top 5 pour éviter que l'API ne plante et que le site rame
-            for n in top5:
-                n["fr"] = tr(n["title"])
-                n["fr_sum"] = tr(n["summary"][:300].rsplit(" ", 1)[0])
+        news = []
+        for n in fetch_news():
+            n = dict(n)
+            n["score"], n["tag"] = score(n)
+            news.append(n)
+    except Exception as e:
+        news = []
+        st.error(f"Flux indisponible : {e}")
 
-        if not news:
-            st.warning("Aucune actualité trouvée.")
-        else:
-            # ---------- SECTION A ----------
-            sec("Le Résumé de la Semaine", "Top 5 · classé par impact macro & géopolitique estimé (banques centrales, inflation, conflits, énergie)")
+    if news:
+        top5 = sorted(news, key=lambda n: (n["score"], n["ts"]), reverse=True)[:5]
+        tl_ = {n["link"] for n in top5}
+        flux = sorted([n for n in news if n["link"] not in tl_], key=lambda n: n["ts"], reverse=True)[:15]
 
-            def slim(n, rank):
-                c = TAGS[n["tag"]][0]
-                return (f'<a class="sl" style="--c:{c}" href="{html.escape(n["link"])}" target="_blank"><span class="rank">{rank}</span>'
-                        f'<div><div class="sl-t">{html.escape(n["title"])}</div><div class="sl-fr">🇫🇷 {html.escape(n["fr"])}</div><div class="sl-m"><span class="tag">{n["tag"]}</span>'
-                        f'<span>{fmt(n["ts"])}</span></div></div></a>')
+        def trio(n, frm):
+            c = TAGS[n["tag"]][0]
+            t_fr, s_fr = frm.get(n["link"], ("", ""))
+            line = f'<div class="fr">{html.escape(t_fr)}</div>' if t_fr and t_fr.strip().lower() != n["title"].strip().lower() else ""
+            return c, line, s_fr
 
-            h = top5[0]
-            hc = TAGS[h["tag"]][0]
-            dots = min(5, 1 + h["score"] // 3)
-            L, R = st.columns([3, 2])
-            with L:
-                st.markdown(
-                    f'<a class="hl" style="--c:{hc}" href="{html.escape(h["link"])}" target="_blank">'
-                    f'<div class="nc-top" style="margin:0"><span class="rank">01</span><span class="tag">{h["tag"]}</span></div>'
-                    f'<div class="hl-t">{html.escape(h["title"])}</div><div class="hl-s">🇫🇷 {html.escape(h["fr"])}</div>'
-                    f'<div class="nc-m"><span>{fmt(h["ts"])}</span><span>·</span><span>Impact <span class="dots" style="--c:{hc}">{"●" * dots}{"○" * (5 - dots)}</span></span>'
-                    f'<span>·</span><span>Lire l\'article ↗</span></div></a>', unsafe_allow_html=True)
-            with R:
-                st.markdown("".join(slim(n, j) for j, n in enumerate(top5[1:], 2)), unsafe_allow_html=True)
+        def top_html(frm):
+            out = ""
+            for i, n in enumerate(top5, 1):
+                c, line, s_fr = trio(n, frm)
+                lvl = min(5, 1 + n["score"] // 3)
+                sm = f'<div class="sm">{html.escape(s_fr or n["summary"][:220])}</div>' if i == 1 else ""
+                out += (f'<a class="tr{" f" if i == 1 else ""}" style="--c:{c}" href="{html.escape(n["link"])}" target="_blank">'
+                        f'<div class="rk2">{i}</div><div><div class="en">{html.escape(n["title"])}</div>{line}{sm}</div>'
+                        f'<div class="mt2"><span class="tag">{n["tag"]}</span><div class="bars">{"".join("<i class=on></i>" if k < lvl else "<i></i>" for k in range(5))}</div>'
+                        f'<span class="tm">{fmt(n["ts"])}</span></div></a>')
+            return f'<div class="tp">{out}</div>'
 
-            # ---------- SECTION B ----------
-            st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
-            sec("Le Flux du Jour", "Dernières publications (Titres originaux pour la rapidité)",
-                f'<a class="btn" href="{AGGREGATOR}" target="_blank">Toutes les infos en temps réel '
-                '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg></a>')
-            
-            opts = ["Tous"] + list(TAGS)
-            sel = (st.pills("Filtre", opts, default="Tous", label_visibility="collapsed") if hasattr(st, "pills")
-                   else st.radio("Filtre", opts, horizontal=True, label_visibility="collapsed"))
-            rows_html = ""
+        def flux_html(frm, sel):
+            out = ""
             for n in flux:
                 if sel not in (None, "Tous") and n["tag"] != sel:
                     continue
-                c = TAGS[n["tag"]][0]
-                rows_html += (f'<a class="fx" style="--c:{c}" href="{html.escape(n["link"])}" target="_blank">'
-                              f'<span class="fx-t">{fmt(n["ts"])}</span><span class="tag" style="--c:{c}">{n["tag"]}</span>'
-                              f'<span class="fx-x">{html.escape(n["title"])}</span><span class="fx-a">↗</span></a>')
-            st.markdown(rows_html, unsafe_allow_html=True)
-    except Exception as e:
-        st.error(f"Erreur de chargement ou de traduction : {e}")
+                c, line, _ = trio(n, frm)
+                out += (f'<a class="fl" style="--c:{c}" href="{html.escape(n["link"])}" target="_blank"><span class="tm">{fmt(n["ts"])}</span>'
+                        f'<div><div class="en" style="font-weight:600;font-size:.9rem">{html.escape(n["title"])}</div>{line}</div>'
+                        f'<span class="tag">{n["tag"]}</span></a>')
+            return f'<div class="tp">{out or "<div class=fr style=padding:16px>Aucune actualité pour ce filtre.</div>"}</div>'
+
+        sec("Le Top 5 de la semaine", "Classé par impact macro & géopolitique estimé · titre d'origine, traduction en dessous")
+        top_box = st.empty()
+        st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+        sec("Le Flux du Jour", "Du plus récent au plus ancien",
+            f'<a class="btn" href="{AGGREGATOR}" target="_blank">Toutes les infos en temps réel ↗</a>')
+        opts = ["Tous"] + list(TAGS)
+        sel = (st.pills("Filtre", opts, default="Tous", label_visibility="collapsed") if hasattr(st, "pills")
+               else st.radio("Filtre", opts, horizontal=True, label_visibility="collapsed"))
+        flux_box = st.empty()
+        note = st.empty()
+        top_box.markdown(top_html({}), unsafe_allow_html=True)
+        flux_box.markdown(flux_html({}, sel), unsafe_allow_html=True)
+        note.caption("Traduction en cours…")
+        try:
+            items = top5 + flux
+            summ = top5[0]["summary"][:240].rsplit(" ", 1)[0] or top5[0]["title"]
+            res = fr_batch(tuple([n["title"] for n in items] + [summ]))
+            frm = {n["link"]: (res[i], "") for i, n in enumerate(items)}
+            frm[top5[0]["link"]] = (res[0], res[-1])
+            top_box.markdown(top_html(frm), unsafe_allow_html=True)
+            flux_box.markdown(flux_html(frm, sel), unsafe_allow_html=True)
+            note.empty()
+        except Exception:
+            note.caption("Traduction momentanément indisponible : titres affichés en anglais. Rechargez dans un instant.")
 
 # =====================================================================
 #  PAGE : BASE DE CONNAISSANCES
 # =====================================================================
 elif category == "📚 Base de Connaissances":
-    hero("Repères institutionnels", "Base de Connaissances",
-         "Ordres de grandeur, économies, matières premières et blocs géopolitiques",
-         '<span class="pill">Valeurs approximatives</span>')
+    hero("Repères institutionnels", "Base de Connaissances", "France, marchés, taux, économies, matières premières et glossaire de salle de marché",
+         '<span class="pill">Ordres de grandeur 2025-2026</span>')
+    st.markdown('<div class="sg">' + "".join(f'<div class="sgt"><span>{a_}</span><b>{b_}</b></div>' for a_, b_ in [
+        ("PIB États-Unis", "≈ 28 000 Mds $"), ("PIB France", "≈ 3 100 Mds $"), ("Crypto-marché", "≈ 2 500 Mds $"),
+        ("Top 5 du S&P 500", "≈ 25 % de l'indice")]) + '</div>', unsafe_allow_html=True)
+    T = st.tabs(["France", "Capitalisations", "Indices", "Banques centrales", "Économies", "Matières premières", "Blocs & Alliances", "Calendrier macro", "Glossaire"])
 
-    TIPS = {
-        "Apple": "Hardware & services · iPhone, App Store",
-        "Microsoft": "Cloud Azure, logiciels, IA (OpenAI)",
-        "NVIDIA": "GPU et accélérateurs pour l'IA",
-        "Alphabet": "Maison mère de Google · publicité & cloud",
-        "Amazon": "E-commerce et AWS (cloud)",
-        "Saudi Aramco": "Compagnie pétrolière nationale saoudienne",
-        "Meta": "Facebook, Instagram, WhatsApp",
-        "Berkshire Hathaway": "Holding de Warren Buffett",
-        "TSMC": "Taiwan Semiconductor · fondeur n°1 mondial",
-        "Eli Lilly": "Pharma · traitements diabète / obésité",
-        "Broadcom": "Semi-conducteurs et logiciels d'infrastructure",
-        "Novo Nordisk": "Santé · diabète et obésité (GLP-1)",
-        "LVMH": "Leader mondial du luxe",
-        "ASML": "Monopole des machines de lithographie EUV",
-        "SAP": "Logiciels de gestion d'entreprise (ERP)",
-        "Hermès": "Luxe · maroquinerie",
-    }
+    with T[0]:
+        st.markdown(table(["Repère", "Ordre de grandeur", "À retenir"], [
+            ["PIB nominal", "≈ 3 100 Mds $", "7e économie mondiale, 3e d'Europe derrière l'Allemagne et le Royaume-Uni"],
+            ["Dette publique", "≈ 115-118 % du PIB", "Parmi les plus élevées de la zone euro : suivie via le spread OAT-Bund"],
+            ["Déficit public", "≈ 5 % du PIB", "Au-dessus du plafond de 3 % du Pacte de stabilité européen"],
+            ["Monnaie & taux", "Euro · BCE", "Les taux directeurs sont fixés par la BCE à Francfort"],
+            ["Bourse", "Euronext Paris", "CAC 40 : 40 grandes valeurs, base 1 000 au 31/12/1987"]]), unsafe_allow_html=True)
+        sec("Les fleurons par secteur", "Survolez une entreprise pour voir son activité")
+        SECT = [("Luxe", ["LVMH", "Hermès", "Kering"], "#A78BFA"), ("Énergie", ["TotalEnergies", "Engie"], "#FB923C"),
+                ("Santé", ["Sanofi", "EssilorLuxottica"], "#34D399"), ("Industrie & Défense", ["Airbus", "Safran", "Thales", "Schneider Electric", "Vinci"], "#22D3EE"),
+                ("Finance", ["BNP Paribas", "AXA", "Société Générale", "Crédit Agricole"], "#818CF8"),
+                ("Conso & Auto", ["L'Oréal", "Danone", "Pernod Ricard", "Stellantis", "Michelin"], "#FBBF24")]
+        for r_ in (0, 3):
+            for col, (t_, names, c_) in zip(st.columns(3), SECT[r_:r_ + 3]):
+                with col:
+                    st.markdown(kc(t_, "", chips(names), c_), unsafe_allow_html=True)
+        sec("Institutions & repères", "Qui fait quoi dans la finance française")
+        for t_, d_ in [
+            ("CAC 40", "Indice des 40 plus grosses capitalisations flottantes cotées à Paris, créé fin 1987 (base 1 000). Très exposé au luxe, à l'énergie, à l'aéronautique et à la finance, avec une majorité de revenus réalisés hors de France."),
+            ("Euronext", "Bourse paneuropéenne qui exploite Paris, Amsterdam, Bruxelles, Lisbonne, Dublin, Milan et Oslo."),
+            ("AMF & ACPR", "L'**AMF** régule les marchés financiers et protège les épargnants ; l'**ACPR** (adossée à la Banque de France) supervise banques et assurances."),
+            ("Agence France Trésor (AFT)", "Émet la dette de l'État : **OAT** (obligations à long terme), **BTF** (court terme) et **BTAN**. Elle publie le calendrier des adjudications."),
+            ("Insee", "Produit les statistiques officielles : PIB trimestriel, inflation (IPC), chômage, climat des affaires."),
+            ("Spread OAT-Bund", "Écart entre le taux français à 10 ans et le taux allemand : le baromètre de la prime de risque France. Il s'élargit quand la confiance dans les finances publiques ou la stabilité politique baisse.")]:
+            with st.expander(t_):
+                st.markdown(d_)
 
-    def chips(names):
-        return "".join(f'<span class="co tip" data-tip="{html.escape(TIPS.get(n, n))}">{n}</span>' for n in names)
-
-    def ranks(items):
-        medal = ["g", "s", "b"]
-        out = ""
-        for i, it in enumerate(items):
-            label, extra = (it if isinstance(it, tuple) else (it, ""))
-            m = medal[i] if i < 3 else ""
-            out += f'<div class="rk"><span class="n {m}">{i + 1}</span><span>{label}</span><em>{extra}</em></div>'
-        return out
-
-    t1, t2, t3, t4, t5, t6, t7 = st.tabs(["Banques Centrales", "Capitalisations", "S&P 500", "Économies", "Matières premières", "Blocs & Alliances", "Fleurons Étrangers"])
-
-    # ---- Banques Centrales ----
-    with t1:
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown('<div class="kc"><h4>Réserve Fédérale (FED)</h4><p>Banque centrale des États-Unis.</p>' + ranks([
-                ("<b>Double mandat</b>", "Plein emploi & Stabilité des prix (~2%)"),
-                ("<b>Indicateurs surveillés</b>", "NFP (Emploi), PCE (Inflation)"),
-                ("<b>Impact Taux</b>", "Hausse = DXY monte, Tech baisse")]) + '</div>', unsafe_allow_html=True)
-        with c2:
-            st.markdown('<div class="kc"><h4>Banque Centrale Européenne (BCE)</h4><p>Banque centrale de la zone euro.</p>' + ranks([
-                ("<b>Mandat unique</b>", "Stabilité des prix uniquement"),
-                ("<b>Indicateurs surveillés</b>", "HICP, PMI manufacturiers"),
-                ("<b>Dynamique</b>", "Souvent en décalage avec la FED")]) + '</div>', unsafe_allow_html=True)
-
-    # ---- Capitalisations ----
-    with t2:
-        st.caption("Survolez une entreprise pour afficher son activité.")
+    with T[1]:
         c1, c2, c3 = st.columns(3)
         for col, (big, title, names, clr) in zip((c1, c2, c3), [
-            ("> 3 000 Mds $", 'Le club des « Big 3 »', ["Apple", "Microsoft", "NVIDIA"], "#FACC15"),
+            ("> 3 000 Mds $", "Le club des « Big 3 »", ["Apple", "Microsoft", "NVIDIA"], "#FACC15"),
             ("> 2 000 Mds $", "Le club des 2 000", ["Alphabet", "Amazon", "Saudi Aramco"], "#CBD5E1"),
             ("> 1 000 Mds $", "Le club des 1 000", ["Meta", "Berkshire Hathaway", "TSMC", "Eli Lilly", "Broadcom"], "#FB923C")]):
             with col:
-                st.markdown(f'<div class="kc" style="--c:{clr}"><h4>{title}</h4><div class="big">{big}</div>{chips(names)}</div>', unsafe_allow_html=True)
-
+                st.markdown(kc(title, big, chips(names), clr), unsafe_allow_html=True)
         c1, c2 = st.columns([3, 2])
         with c1:
-            st.markdown('<div class="kc"><h4>Poids lourds européens</h4><p>Capitalisation approximative (milliards de dollars). SAP et Hermès complètent le podium élargi.</p>', unsafe_allow_html=True)
-            fig = go.Figure(go.Bar(
-                y=["ASML", "LVMH", "Novo Nordisk"], x=[375, 400, 575], orientation='h',
-                text=["~350-400", "~400", "~550-600"], textposition="inside",
-                marker=dict(color=["#22D3EE", "#A78BFA", A1], line=dict(width=0)),
-                hovertemplate="%{y} : %{text} Mds $<extra></extra>"))
-            fig.update_layout(height=200, margin=dict(l=0, r=10, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                              xaxis=dict(visible=False), yaxis=dict(color="#CBD3E6", tickfont=dict(size=13)),
-                              font=dict(family="Inter", color="#fff"))
+            st.markdown('<div class="kc"><h4>Poids lourds européens</h4><p>Capitalisation approximative (Mds $).</p>', unsafe_allow_html=True)
+            fig = go.Figure(go.Bar(y=["ASML", "LVMH", "Novo Nordisk"], x=[375, 400, 575], orientation="h", text=["~350-400", "~400", "~550-600"],
+                                   textposition="inside", marker=dict(color=["#22D3EE", "#A78BFA", A1])))
+            fig.update_layout(height=190, margin=dict(l=0, r=10, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              xaxis=dict(visible=False), yaxis=dict(color="#CBD3E6"), font=dict(family="Inter", color="#fff"))
             show(fig, key="eu_caps")
-            st.markdown(chips(["SAP", "Hermès"]) + '</div>', unsafe_allow_html=True)
+            st.markdown("<p>Autres noms : </p>" + chips(["SAP", "Hermès", "TotalEnergies", "Sanofi", "Schneider Electric", "L'Oréal", "Airbus"]) + '</div>', unsafe_allow_html=True)
         with c2:
             st.markdown('<div class="kc"><h4>Total crypto-marché</h4><div class="big" style="--c:#FBBF24">~2 500 Mds $</div>', unsafe_allow_html=True)
             show(gauge(52.5, "Dominance du Bitcoin (≈ 50-55 %)", color="#F59E0B"), key="btc_dom")
             st.markdown('</div>', unsafe_allow_html=True)
-
-    # ---- S&P 500 ----
-    with t3:
         c1, c2 = st.columns([3, 2])
         with c1:
-            st.markdown('<div class="kc"><h4>Plus grandes pondérations du S&P 500</h4>' + ranks([
-                ("<b>Microsoft</b>", "Tech · Cloud · IA"), ("<b>Apple</b>", "Hardware · Services"),
-                ("<b>NVIDIA</b>", "Semi-conducteurs · IA"), ("<b>Amazon</b>", "E-commerce · Cloud"),
-                ("<b>Alphabet</b>", "Publicité · Recherche")]) + '</div>', unsafe_allow_html=True)
+            st.markdown(kc("Top 5 du S&P 500", "", ranks([("<b>Microsoft</b>", "Tech · Cloud · IA"), ("<b>Apple</b>", "Hardware · Services"),
+                         ("<b>NVIDIA</b>", "Semi-conducteurs · IA"), ("<b>Amazon</b>", "E-commerce · Cloud"), ("<b>Alphabet</b>", "Publicité · Recherche")])), unsafe_allow_html=True)
         with c2:
-            st.markdown('<div class="kc"><h4>Concentration</h4><p>Ces 5 entreprises pèsent à elles seules près de 25 % de l\'indice : un risque de concentration majeur.</p>', unsafe_allow_html=True)
+            st.markdown('<div class="kc"><h4>Concentration</h4>', unsafe_allow_html=True)
             show(gauge(25, "Poids cumulé du Top 5", color=A1), key="sp_conc")
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # ---- Économies ----
-    with t4:
+    with T[2]:
+        st.markdown(table(["Indice", "Zone", "Composition", "À retenir"], [
+            ["S&P 500", "États-Unis", "500 grandes valeurs", "Pondéré par la capitalisation flottante · référence mondiale"],
+            ["Nasdaq 100", "États-Unis", "100 valeurs non financières", "Très orienté tech et IA"],
+            ["Dow Jones", "États-Unis", "30 valeurs", "Pondéré par le prix des actions, pas par la taille"],
+            ["Russell 2000", "États-Unis", "≈ 2 000 petites capitalisations", "Baromètre de l'économie domestique"],
+            ["CAC 40", "France", "40 valeurs d'Euronext Paris", "Luxe, énergie, aéro, santé · base 1 000 en 1987"],
+            ["SBF 120", "France", "120 valeurs", "CAC 40 élargi aux valeurs moyennes"],
+            ["Euronext 100", "Europe", "100 valeurs d'Euronext", "Paris, Amsterdam, Bruxelles, Lisbonne…"],
+            ["Euro Stoxx 50", "Zone euro", "50 valeurs", "Sous-jacent des futures européens"],
+            ["Stoxx Europe 600", "Europe", "600 valeurs, 17 pays", "Large couverture du marché européen"],
+            ["DAX 40", "Allemagne", "40 valeurs", "Passé de 30 à 40 valeurs en 2021"],
+            ["FTSE 100", "Royaume-Uni", "100 valeurs", "Beaucoup de revenus en devises : énergie, banques, matières premières"],
+            ["Nikkei 225", "Japon", "225 valeurs", "Pondéré par le prix"],
+            ["Hang Seng", "Hong Kong", "≈ 80 valeurs et plus", "Tech et finance chinoises"],
+            ["CSI 300", "Chine", "300 valeurs Shanghai/Shenzhen", "Référence des actions A"],
+            ["Nifty 50", "Inde", "50 valeurs de la NSE", "Reliance, TCS, HDFC Bank en tête"],
+            ["MSCI World", "Monde", "≈ 1 400 valeurs, pays développés", "Benchmark de la gestion d'actifs"],
+            ["MSCI Emerging", "Émergents", "≈ 1 200 valeurs", "Chine, Inde, Taïwan, Corée dominent"]]), unsafe_allow_html=True)
+        with st.expander("Leaders par indice"):
+            st.markdown("- **CAC 40** : LVMH, TotalEnergies, Hermès, Schneider Electric, Sanofi (parmi les plus fortes pondérations)\n"
+                        "- **Nifty 50 (Inde)** : Reliance Industries (conglomérat de Mukesh Ambani), TCS (services IT), HDFC Bank\n"
+                        "- **Stoxx 600 (Europe)** : Novo Nordisk (santé/diabète), LVMH (luxe), ASML (semi-conducteurs/EUV)")
+
+    with T[3]:
+        st.markdown(table(["Banque", "Zone", "Taux de référence", "Mandat", "Réunions"], [
+            ["Fed", "États-Unis", "Fed funds (fourchette cible)", "Double mandat : plein-emploi + stabilité des prix (cible 2 %)", "8 / an"],
+            ["BCE", "Zone euro", "Facilité de dépôt", "Stabilité des prix, cible symétrique de 2 %", "8 / an"],
+            ["BoJ", "Japon", "Taux au jour le jour", "Stabilité des prix, cible 2 %", "8 / an"],
+            ["BoE", "Royaume-Uni", "Bank Rate", "Inflation (IPC) à 2 %", "8 / an"],
+            ["SNB", "Suisse", "Taux directeur SNB", "Stabilité des prix (inflation inférieure à 2 %)", "4 / an"],
+            ["PBoC", "Chine", "LPR (Loan Prime Rate)", "Stabilité de la monnaie et soutien à la croissance", "LPR mensuel"]]), unsafe_allow_html=True)
+        st.info("Les niveaux actuels des taux sont dans la page « Banques Centrales » du menu.")
+        with st.expander("Les outils d'une banque centrale"):
+            st.markdown("- **Taux directeurs** : le levier principal.\n- **QE / QT** : achats d'actifs ou réduction du bilan.\n"
+                        "- **Forward guidance** : annoncer la trajectoire future des taux.\n- **Dot plot** : projections de taux des membres du FOMC, 4 fois par an.")
+
+    with T[4]:
         c1, c2 = st.columns([3, 2])
         with c1:
-            st.markdown('<div class="kc"><h4>Plus grandes économies · PIB nominal</h4>', unsafe_allow_html=True)
-            fig = go.Figure(go.Bar(
-                y=["Inde", "Japon", "Allemagne", "Chine", "États-Unis"], x=[3900, 4200, 4500, 18500, 28000], orientation='h',
-                text=["~3 900", "~4 200", "~4 500", "~18 500", "~28 000"], textposition="outside", cliponaxis=False,
-                marker=dict(color=["#34D399", "#22D3EE", "#818CF8", "#A78BFA", A1]),
-                hovertemplate="%{y} : %{text} Mds $<extra></extra>"))
-            fig.update_layout(height=290, margin=dict(l=0, r=60, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                              xaxis=dict(visible=False), yaxis=dict(color="#CBD3E6", tickfont=dict(size=13)),
-                              font=dict(family="Inter", color="#fff"))
+            st.markdown('<div class="kc"><h4>Top 10 · PIB nominal (Mds $, ordres de grandeur)</h4>', unsafe_allow_html=True)
+            ce = ["États-Unis", "Chine", "Allemagne", "Japon", "Inde", "Royaume-Uni", "France", "Italie", "Brésil", "Canada"]
+            ve = [28000, 18500, 4500, 4200, 3900, 3600, 3100, 2300, 2200, 2200]
+            fig = go.Figure(go.Bar(y=ce, x=ve, orientation="h", text=[f"~{v:,}".replace(",", " ") for v in ve], textposition="outside", cliponaxis=False,
+                                   marker=dict(color=["#60A5FA" if c == "France" else A1 for c in ce])))
+            fig.update_layout(height=400, margin=dict(l=0, r=70, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              xaxis=dict(visible=False), yaxis=dict(autorange="reversed", color="#CBD3E6"), font=dict(family="Inter", color="#fff"))
             show(fig, key="gdp")
             st.markdown('</div>', unsafe_allow_html=True)
-            with st.expander("Contexte : Allemagne, Japon, Inde"):
-                st.markdown("L'**Allemagne** a récemment dépassé le **Japon** suite à la faiblesse du Yen. "
-                            "L'**Inde**, en forte croissance, vise le top 3 avant 2030.")
         with c2:
-            st.markdown('<div class="kc"><h4>Plus grandes économies d\'Europe</h4>' + ranks([
-                ("<b>Allemagne</b>", "Moteur industriel"), ("<b>Royaume-Uni</b>", "Finance & services"),
-                ("<b>France</b>", "Luxe · aéro · énergie"), ("<b>Italie</b>", "Manufacturier"),
-                ("<b>Espagne</b>", "Tourisme & services")]) + '</div>', unsafe_allow_html=True)
+            st.markdown(kc("Les plus grandes économies d'Europe", "", ranks([("<b>Allemagne</b>", "Moteur industriel"), ("<b>Royaume-Uni</b>", "Finance & services"),
+                         ("<b>France</b>", "Luxe · aéro · énergie"), ("<b>Italie</b>", "Manufacturier"), ("<b>Espagne</b>", "Tourisme & services")])), unsafe_allow_html=True)
+        with st.expander("Contexte : Allemagne, Japon, Inde"):
+            st.markdown("L'**Allemagne** a récemment dépassé le **Japon** suite à la faiblesse du Yen. L'**Inde**, en forte croissance, vise le top 3 avant 2030.")
 
-    # ---- Matières premières ----
-    with t5:
-        st.caption("Top 3 des plus grands producteurs mondiaux.")
-        commo = [
-            ("Pétrole (barils/jour)", ["États-Unis", "Arabie Saoudite", "Russie"]),
-            ("Gaz naturel", ["États-Unis", "Russie", "Iran"]),
-            ("Or (mines)", ["Chine", "Australie", "Russie"]),
-            ("Cuivre", ["Chili", "Pérou", "RDC (Congo)"]),
-            ("Lithium (batteries)", ["Australie", "Chili", "Chine"]),
-        ]
-        for k, (name, top) in enumerate(commo):
-            with st.expander(name, expanded=(k == 0)):
-                st.markdown(ranks(top), unsafe_allow_html=True)
+    with T[5]:
+        COM = [("Pétrole (barils/jour)", ["États-Unis", "Arabie saoudite", "Russie"], "Le Brent est la référence européenne. La France produit très peu de brut : TotalEnergies est un acteur mondial."),
+               ("Gaz naturel", ["États-Unis", "Russie", "Iran"], "Le GNL a pris le relais du gaz russe en Europe."),
+               ("Or (mines)", ["Chine", "Australie", "Russie"], "Valeur refuge, très demandée par les banques centrales."),
+               ("Argent", ["Mexique", "Chine", "Pérou"], "À la fois métal précieux et métal industriel (solaire)."),
+               ("Cuivre", ["Chili", "Pérou", "RDC (Congo)"], "« Dr. Copper » : baromètre de l'activité industrielle."),
+               ("Lithium (batteries)", ["Australie", "Chili", "Chine"], "Clé de la voiture électrique."),
+               ("Uranium", ["Kazakhstan", "Canada", "Namibie"], "Le nucléaire fournit environ deux tiers de l'électricité française (EDF, Orano)."),
+               ("Blé", ["Chine", "Inde", "Russie"], "La France est le premier producteur de l'UE et un grand exportateur."),
+               ("Cacao", ["Côte d'Ivoire", "Ghana"], "Ces deux pays assurent plus de la moitié de l'offre mondiale."),
+               ("Café", ["Brésil", "Vietnam", "Colombie"], "Très sensible aux aléas climatiques brésiliens."),
+               ("Platine", ["Afrique du Sud", "Russie", "Zimbabwe"], "Catalyseurs automobiles et hydrogène.")]
+        for k_, (name, top, note_) in enumerate(COM):
+            with st.expander(name, expanded=(k_ == 0)):
+                st.markdown(ranks(top) + f'<p style="color:#8B93A7;font-size:.85rem;margin-top:8px">{note_}</p>', unsafe_allow_html=True)
 
-    # ---- Blocs ----
-    with t6:
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.markdown('<div class="kc" style="--c:#818CF8"><h4>G7</h4><div class="big">7 + UE</div>' + chips(["États-Unis", "Japon", "Allemagne", "Royaume-Uni", "France", "Italie", "Canada"]).replace('class="co tip" data-tip="', 'class="co" data-x="') + '<p style="margin-top:10px">Union européenne invitée aux sommets.</p></div>', unsafe_allow_html=True)
-        with c2:
-            st.markdown('<div class="kc" style="--c:#FB7185"><h4>BRICS+</h4><div class="big">Bloc élargi</div>' + "".join(f'<span class="co">{x}</span>' for x in ["Brésil", "Russie", "Inde", "Chine", "Afrique du Sud"]) + '<p style="margin-top:10px">Rejoints récemment par l\'Iran, l\'Égypte, l\'Éthiopie et les Émirats arabes unis.</p></div>', unsafe_allow_html=True)
-        with c3:
-            st.markdown('<div class="kc" style="--c:#FB923C"><h4>OPEP+</h4><div class="big">Cartel pétrolier</div><p>Mené par l\'<b>Arabie Saoudite</b>, allié à la <b>Russie</b> pour contrôler l\'offre mondiale de brut.</p></div>', unsafe_allow_html=True)
+    with T[6]:
+        BL = [("G7", "États-Unis, Japon, Allemagne, Royaume-Uni, France, Italie, Canada (+ UE invitée)."),
+              ("G20", "Le G7 plus les grandes économies émergentes (Chine, Inde, Brésil, Arabie saoudite…), l'UE et l'Union africaine : plus de 80 % du PIB mondial."),
+              ("Union européenne", "27 États membres, marché unique, institutions à Bruxelles et Strasbourg."),
+              ("Zone euro", "21 pays (dont la Bulgarie, entrée le 1er janvier 2026), monnaie unique, politique monétaire de la BCE à Francfort."),
+              ("OTAN", "Alliance militaire de 32 membres depuis l'adhésion de la Suède en 2024."),
+              ("OCDE", "38 pays, siège à Paris : produit les statistiques et recommandations économiques de référence."),
+              ("BRICS+", "Brésil, Russie, Inde, Chine, Afrique du Sud, rejoints récemment par l'Iran, l'Égypte, l'Éthiopie et les Émirats arabes unis."),
+              ("OPEP+", "Cartel pétrolier mené par l'Arabie saoudite, allié à la Russie pour contrôler l'offre mondiale de brut."),
+              ("ASEAN", "10 pays d'Asie du Sud-Est : Indonésie, Thaïlande, Vietnam, Singapour, Malaisie, Philippines…"),
+              ("ACEUM (ex-ALENA)", "Accord commercial États-Unis, Mexique et Canada.")]
+        cl, cr = st.columns(2)
+        for k_, (t_, d_) in enumerate(BL):
+            with (cl if k_ % 2 == 0 else cr):
+                with st.expander(t_, expanded=(k_ < 2)):
+                    st.markdown(d_)
 
-    # ---- Leaders étrangers ----
-    with t7:
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown('<div class="kc"><h4>Inde · Nifty 50</h4>' + ranks([
-                ("<b>Reliance Industries</b>", "Conglomérat · M. Ambani"), ("<b>TCS</b>", "Services IT"), ("<b>HDFC Bank</b>", "Banque")]) + '</div>', unsafe_allow_html=True)
-        with c2:
-            st.markdown('<div class="kc"><h4>Europe · Stoxx 600</h4>' + ranks([
-                ("<b>Novo Nordisk</b>", "Santé · diabète"), ("<b>LVMH</b>", "Luxe"), ("<b>ASML</b>", "Semi-conducteurs · EUV")]) + '</div>', unsafe_allow_html=True)
+    with T[7]:
+        st.markdown(table(["Indicateur", "Zone", "Rythme", "Publié par", "Pourquoi ça bouge les marchés"], [
+            ["Emploi non agricole (NFP)", "États-Unis", "Mensuel, 1er vendredi", "BLS", "Cap de la Fed : emploi et salaires"],
+            ["Inflation (CPI)", "États-Unis", "Mensuel, mi-mois", "BLS", "Anticipations de taux directeurs"],
+            ["Déflateur PCE", "États-Unis", "Mensuel, fin de mois", "BEA", "Indicateur d'inflation préféré de la Fed"],
+            ["Demandes d'allocations", "États-Unis", "Hebdomadaire, jeudi", "Département du Travail", "Thermomètre du marché du travail"],
+            ["PMI / ISM", "Monde", "Mensuel", "S&P Global / ISM", "Au-dessus de 50 : expansion"],
+            ["Inflation flash", "Zone euro", "Mensuel, début de mois", "Eurostat", "Trajectoire des taux de la BCE"],
+            ["IPC et PIB trimestriel", "France", "Mensuel / trimestriel", "Insee", "Croissance, inflation, finances publiques"],
+            ["Climat des affaires, confiance des ménages", "France", "Mensuel", "Insee", "Indicateurs avancés de l'activité"],
+            ["Balance commerciale", "France", "Mensuel", "Douanes", "Compétitivité, aéronautique, énergie"],
+            ["Ifo / ZEW", "Allemagne", "Mensuel", "Ifo / ZEW", "Moral de l'industrie allemande"],
+            ["Tankan", "Japon", "Trimestriel", "Banque du Japon", "Confiance des entreprises japonaises"],
+            ["Réunions FOMC, BCE, BoJ, BoE", "Monde", "8 par an chacune", "Banques centrales", "Décisions et discours qui font les marchés"]]), unsafe_allow_html=True)
+
+    with T[8]:
+        q = st.text_input("Rechercher un terme", placeholder="ex. spread, carry, duration…").strip().lower()
+        GL = [("Point de base (pb)", "0,01 % : une hausse de 25 pb correspond à +0,25 point."),
+              ("Spread", "Écart de rendement entre deux titres ou taux. Mesure le risque relatif."),
+              ("Spread OAT-Bund", "Écart entre le taux français et le taux allemand à 10 ans : prime de risque de la France."),
+              ("Courbe des taux", "Rendements selon l'échéance (2 ans, 10 ans…). Une courbe pentue traduit des attentes de croissance."),
+              ("Inversion de courbe", "Taux courts supérieurs aux taux longs : signal historique de récession."),
+              ("Duration", "Sensibilité d'une obligation aux taux : duration 7, environ −7 % si les taux montent d'un point."),
+              ("QE / QT", "Assouplissement quantitatif (achats d'actifs) ou resserrement (réduction du bilan)."),
+              ("Forward guidance", "Communication de la banque centrale sur sa trajectoire future de taux."),
+              ("Dot plot", "Graphique des projections de taux des membres du FOMC, publié 4 fois par an."),
+              ("Carry trade", "Emprunter dans une devise à bas taux (yen) pour placer dans une devise mieux rémunérée. Risque de débouclage brutal."),
+              ("Risk-on / Risk-off", "Appétit ou aversion pour le risque. En risk-off : or, yen, franc suisse et Treasuries sont recherchés."),
+              ("VIX / MOVE", "Volatilité implicite des actions (S&P 500) / des taux (Treasuries)."),
+              ("Contango / Backwardation", "Contrat à terme plus cher / moins cher que le prix comptant."),
+              ("Bid-ask", "Écart entre prix d'achat et de vente : le coût de la liquidité."),
+              ("Market maker", "Teneur de marché : cote en continu un prix d'achat et de vente."),
+              ("Short squeeze", "Hausse brutale quand les vendeurs à découvert doivent racheter."),
+              ("Levier & appel de marge", "Position plus grosse que le capital engagé ; si les pertes grossissent, la banque exige des fonds supplémentaires."),
+              ("Repo", "Prêt de liquidités contre des titres donnés en garantie."),
+              ("CDS", "Assurance contre le défaut d'un émetteur ; son prix reflète le risque de crédit."),
+              ("Taux réel", "Taux nominal moins l'inflation."),
+              ("Stagflation", "Croissance faible avec inflation élevée."),
+              ("Soft / Hard landing", "Ralentissement maîtrisé de l'économie / récession brutale."),
+              ("PMI", "Indice des directeurs d'achat : au-dessus de 50, l'activité progresse.")]
+        hit = [g for g in GL if q in g[0].lower() or q in g[1].lower()]
+        if not hit:
+            st.info("Aucun terme trouvé.")
+        cl, cr = st.columns(2)
+        for k_, (t_, d_) in enumerate(hit):
+            with (cl if k_ % 2 == 0 else cr):
+                with st.expander(t_):
+                    st.markdown(d_)
+        with st.expander("Salle de marché : qui fait quoi ?"):
+            st.markdown("- **Sales** : relation avec les clients institutionnels, idées de trading, prise d'ordres.\n"
+                        "- **Trader** : cote les prix, gère le risque de son portefeuille.\n"
+                        "- **Structureur** : conçoit des produits dérivés sur mesure.\n"
+                        "- **Quant / Strats** : modèles de pricing et outils.\n"
+                        "- **Recherche (sell-side)** : analyses publiées pour les clients.\n"
+                        "- **Middle & back office** : contrôle des risques, confirmation et règlement-livraison.\n"
+                        "- Salles de marché françaises majeures : BNP Paribas, Société Générale, Natixis, Crédit Agricole CIB.")
