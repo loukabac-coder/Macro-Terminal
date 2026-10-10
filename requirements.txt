@@ -1,8 +1,8 @@
-streamlit
-yfinance
-pandas
-plotly
-feedparser
-requests
-deep-translator
+streamlit>=1.40
+yfinance>=0.2.54
+pandas>=2.0
+plotly>=5.20
+feedparser>=6.0
+requests>=2.31
+deep-translator>=1.11
 tzdata
