@@ -1,9 +1,8 @@
-streamlit>=1.40
-yfinance>=0.2.54
-pandas>=2.0
-plotly>=5.20
-feedparser>=6.0
-requests>=2.31
-deep-translator>=1.11
+streamlit>=1.40,<2
+yfinance>=0.2.54,<2
+pandas>=2.0,<4
+plotly>=5.20,<8
+feedparser>=6.0,<7
+requests>=2.31,<3
+deep-translator>=1.11,<2
 tzdata
-numpy>=1.24
