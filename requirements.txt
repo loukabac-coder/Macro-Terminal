@@ -6,3 +6,4 @@ feedparser>=6.0
 requests>=2.31
 deep-translator>=1.11
 tzdata
+numpy>=1.24
